@@ -61,6 +61,44 @@ class HikePoint {
   );
 }
 
+String gpxFileName(DateTime startedAt) {
+  final timestamp = startedAt.toUtc().toIso8601String().replaceAll(':', '-');
+  return 'trailoff-hike-$timestamp.gpx';
+}
+
+String toGpx(SavedHike hike, {String name = 'TrailOff hike'}) {
+  final safeName = _escapeXml(name);
+  final trackPoints = hike.points
+      .map((point) {
+        final latitude = point.latitude.toStringAsFixed(7);
+        final longitude = point.longitude.toStringAsFixed(7);
+        final elevation = point.altitude.toStringAsFixed(1);
+        final timestamp = point.timestamp.toUtc().toIso8601String();
+        return '    <trkpt lat="$latitude" lon="$longitude">'
+            '<ele>$elevation</ele><time>$timestamp</time></trkpt>';
+      })
+      .join('\n');
+
+  return '''<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="TrailOff" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata><time>${hike.startedAt.toUtc().toIso8601String()}</time></metadata>
+  <trk>
+    <name>$safeName</name>
+    <type>hiking</type>
+    <trkseg>
+$trackPoints
+    </trkseg>
+  </trk>
+</gpx>''';
+}
+
+String _escapeXml(String value) => value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+
 class SavedHike {
   const SavedHike({
     required this.startedAt,

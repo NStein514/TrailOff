@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'hike_recording.dart';
 
@@ -819,6 +821,21 @@ class _HikeHistory extends StatelessWidget {
   final List<SavedHike> hikes;
   final bool isLoading;
 
+  Future<void> _shareGpx(BuildContext context, SavedHike hike) async {
+    final file = XFile.fromData(
+      utf8.encode(toGpx(hike)),
+      name: gpxFileName(hike.startedAt),
+      mimeType: 'application/gpx+xml',
+    );
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [file],
+        subject: 'TrailOff hike',
+        text: 'My hike recorded with TrailOff.',
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -902,13 +919,23 @@ class _HikeHistory extends StatelessWidget {
                     fontSize: 11,
                   ),
                 ),
-                trailing: Text(
-                  '+${hike.elevationGainMeters.round()} m',
-                  style: const TextStyle(
-                    color: _forest,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '+${hike.elevationGainMeters.round()} m',
+                      style: const TextStyle(
+                        color: _forest,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Share GPX',
+                      onPressed: () => _shareGpx(context, hike),
+                      icon: const Icon(Icons.ios_share_rounded, color: _forest),
+                    ),
+                  ],
                 ),
               ),
             );

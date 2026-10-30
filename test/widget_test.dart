@@ -53,6 +53,23 @@ void main() {
     expect(historyStore.hikes.single.elevationGainMeters, 12);
     expect(find.textContaining('GPS points'), findsNWidgets(2));
     expect(find.text('Past adventures'), findsOneWidget);
+
+    final savedHike = historyStore.hikes.single;
+    final gpx = toGpx(savedHike, name: 'Trail & <ridge>');
+    expect(gpx, contains('<gpx version="1.1"'));
+    expect(gpx, contains('<name>Trail &amp; &lt;ridge&gt;</name>'));
+    expect(gpx, contains('<trkpt lat="46.8000000" lon="0.0000000">'));
+    expect(gpx, contains('<ele>120.0</ele>'));
+    expect(
+      gpx,
+      contains(
+        '<time>${savedHike.points.first.timestamp.toUtc().toIso8601String()}</time>',
+      ),
+    );
+    expect(RegExp(r'<trkpt\s').allMatches(gpx), hasLength(2));
+    expect(gpx, contains('Trail &amp; &lt;ridge&gt;'));
+    expect(gpxFileName(savedHike.startedAt), endsWith('.gpx'));
+    expect(find.byTooltip('Share GPX'), findsOneWidget);
   });
 }
 
