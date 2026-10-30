@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
 import 'package:share_plus/share_plus.dart';
 
 import 'hike_recording.dart';
+import 'offline_map.dart';
 
 void main() {
   runApp(const TrailOffApp());
@@ -15,10 +18,20 @@ const _ink = Color(0xFF292D2B);
 const _paper = Color(0xFFF0F7F2);
 
 class TrailOffApp extends StatelessWidget {
-  const TrailOffApp({super.key, this.locationSource, this.historyStore});
+  const TrailOffApp({
+    super.key,
+    this.locationSource,
+    this.historyStore,
+    this.offlineMapRepository,
+    this.offlineMapSupported,
+    this.nativeMapSupported,
+  });
 
   final HikeLocationSource? locationSource;
   final HikeHistoryStore? historyStore;
+  final OfflineMapRepository? offlineMapRepository;
+  final bool? offlineMapSupported;
+  final bool? nativeMapSupported;
 
   @override
   Widget build(BuildContext context) {
@@ -34,16 +47,29 @@ class TrailOffApp extends StatelessWidget {
       home: HikeDashboard(
         locationSource: locationSource,
         historyStore: historyStore,
+        offlineMapRepository: offlineMapRepository,
+        offlineMapSupported: offlineMapSupported,
+        nativeMapSupported: nativeMapSupported,
       ),
     );
   }
 }
 
 class HikeDashboard extends StatefulWidget {
-  const HikeDashboard({super.key, this.locationSource, this.historyStore});
+  const HikeDashboard({
+    super.key,
+    this.locationSource,
+    this.historyStore,
+    this.offlineMapRepository,
+    this.offlineMapSupported,
+    this.nativeMapSupported,
+  });
 
   final HikeLocationSource? locationSource;
   final HikeHistoryStore? historyStore;
+  final OfflineMapRepository? offlineMapRepository;
+  final bool? offlineMapSupported;
+  final bool? nativeMapSupported;
 
   @override
   State<HikeDashboard> createState() => _HikeDashboardState();
@@ -65,13 +91,104 @@ class _HikeDashboardState extends State<HikeDashboard> {
   bool _hasRecordedSession = false;
   bool _isLoadingHistory = true;
   bool _mapSaved = false;
+  bool _mapDownloading = false;
+  double _mapDownloadProgress = 0;
+  int _mapDownloadedBytes = 0;
+  int? _offlineRegionId;
+  bool get _offlineMapSupported =>
+      widget.offlineMapSupported ?? _isMobileTarget;
+  bool get _nativeMapSupported => widget.nativeMapSupported ?? _isMobileTarget;
+  bool get _isMobileTarget =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  late final OfflineMapRepository _offlineMapRepository;
 
   @override
   void initState() {
     super.initState();
     _locationSource = widget.locationSource ?? GeolocatorHikeLocationSource();
     _historyStore = widget.historyStore ?? SharedPreferencesHikeHistoryStore();
+    _offlineMapRepository =
+        widget.offlineMapRepository ?? MapLibreOfflineMapRepository();
     _loadHistory();
+    _loadOfflineRegion();
+  }
+
+  Future<void> _loadOfflineRegion() async {
+    if (!_offlineMapSupported) return;
+    try {
+      final region = await _offlineMapRepository.findTourRegion();
+      if (!mounted || region == null) return;
+      setState(() {
+        _offlineRegionId = region.id;
+        _mapSaved = region.isComplete;
+      });
+    } catch (_) {
+      // Keep the online map available if the native offline store is unavailable.
+    }
+  }
+
+  Future<void> _downloadOfflineMap() async {
+    if (!_offlineMapSupported) {
+      _showMessage(
+        'Offline map downloads are available in the Android and iOS apps.',
+      );
+      return;
+    }
+    setState(() {
+      _mapDownloading = true;
+      _mapDownloadProgress = 0;
+      _mapDownloadedBytes = 0;
+    });
+    try {
+      final regionId = await _offlineMapRepository.downloadTourRegion(
+        onProgress: (progress, bytes) {
+          if (!mounted) return;
+          setState(() {
+            _mapDownloadProgress = progress.clamp(0.0, 1.0);
+            _mapDownloadedBytes = bytes;
+          });
+        },
+        onComplete: () {
+          if (!mounted) return;
+          setState(() {
+            _mapDownloading = false;
+            _mapSaved = true;
+          });
+          _showMessage('Tour du Portillon is ready for offline use.');
+        },
+        onError: (message) {
+          if (!mounted) return;
+          setState(() => _mapDownloading = false);
+          _showMessage('Map download failed: $message');
+        },
+      );
+      if (!mounted) return;
+      setState(() => _offlineRegionId = regionId);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _mapDownloading = false);
+      _showMessage('Map download failed: $error');
+    }
+  }
+
+  Future<void> _deleteOfflineMap() async {
+    final regionId = _offlineRegionId;
+    if (regionId == null) return;
+    try {
+      await _offlineMapRepository.deleteRegion(regionId);
+      if (!mounted) return;
+      setState(() {
+        _offlineRegionId = null;
+        _mapSaved = false;
+        _mapDownloadProgress = 0;
+      });
+      _showMessage('Offline map removed from this device.');
+    } catch (error) {
+      _showMessage('The offline map could not be deleted: $error');
+    }
   }
 
   Future<void> _loadHistory() async {
@@ -201,23 +318,6 @@ class _HikeDashboardState extends State<HikeDashboard> {
     super.dispose();
   }
 
-  void _toggleOfflineMap() {
-    setState(() => _mapSaved = !_mapSaved);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            _mapSaved
-                ? 'Tour du Portillon added to your offline maps.'
-                : 'Tour du Portillon removed from offline maps.',
-          ),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: _ink,
-        ),
-      );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -242,10 +342,20 @@ class _HikeDashboardState extends State<HikeDashboard> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  _TrailMap(points: _recordedPoints, isRecording: _isRecording),
+                  _TrailMap(
+                    points: _recordedPoints,
+                    isRecording: _isRecording,
+                    showNativeMap: _nativeMapSupported,
+                  ),
                   _OfflineMapButton(
                     saved: _mapSaved,
-                    onPressed: _toggleOfflineMap,
+                    downloading: _mapDownloading,
+                    progress: _mapDownloadProgress,
+                    downloadedBytes: _mapDownloadedBytes,
+                    supported: _offlineMapSupported,
+                    onPressed: _mapSaved
+                        ? _deleteOfflineMap
+                        : _downloadOfflineMap,
                   ),
                   const SizedBox(height: 12),
                   _HikeSummary(
@@ -332,10 +442,15 @@ class _Wordmark extends StatelessWidget {
 }
 
 class _TrailMap extends StatelessWidget {
-  const _TrailMap({required this.points, required this.isRecording});
+  const _TrailMap({
+    required this.points,
+    required this.isRecording,
+    required this.showNativeMap,
+  });
 
   final List<HikePoint> points;
   final bool isRecording;
+  final bool showNativeMap;
 
   @override
   Widget build(BuildContext context) {
@@ -346,9 +461,12 @@ class _TrailMap extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            CustomPaint(
-              painter: _TopoMapPainter(points: List.unmodifiable(points)),
-            ),
+            if (showNativeMap)
+              _NativeTrailMap(points: List.unmodifiable(points))
+            else
+              CustomPaint(
+                painter: _TopoMapPainter(points: List.unmodifiable(points)),
+              ),
             if (isRecording)
               Positioned(
                 left: 14,
@@ -772,11 +890,103 @@ class _TopoMapPainter extends CustomPainter {
       oldDelegate.points != points;
 }
 
+class _NativeTrailMap extends StatefulWidget {
+  const _NativeTrailMap({required this.points});
+
+  final List<HikePoint> points;
+
+  @override
+  State<_NativeTrailMap> createState() => _NativeTrailMapState();
+}
+
+class _NativeTrailMapState extends State<_NativeTrailMap> {
+  maplibre.MapLibreMapController? _controller;
+  maplibre.Line? _trailLine;
+  bool _styleLoaded = false;
+
+  @override
+  Widget build(BuildContext context) => maplibre.MapLibreMap(
+    initialCameraPosition: const maplibre.CameraPosition(
+      target: maplibre.LatLng(42.695, 0.515),
+      zoom: 12,
+    ),
+    styleString: tourOfflineMapStyle,
+    compassEnabled: true,
+    myLocationEnabled: false,
+    logoEnabled: false,
+    attributionButtonPosition: maplibre.AttributionButtonPosition.bottomRight,
+    onMapCreated: (controller) => _controller = controller,
+    onStyleLoadedCallback: _drawKnownTrail,
+  );
+
+  void _drawKnownTrail() {
+    final controller = _controller;
+    if (!_styleLoaded && controller != null) {
+      _styleLoaded = true;
+      _updateTrailLine();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _NativeTrailMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_styleLoaded && oldWidget.points != widget.points) {
+      _updateTrailLine();
+    }
+  }
+
+  Future<void> _updateTrailLine() async {
+    final controller = _controller;
+    if (controller == null || !_styleLoaded) return;
+    final previousLine = _trailLine;
+    if (previousLine != null) await controller.removeLine(previousLine);
+    final geometry = widget.points.isEmpty
+        ? const [
+            maplibre.LatLng(42.686, 0.486),
+            maplibre.LatLng(42.691, 0.497),
+            maplibre.LatLng(42.688, 0.506),
+            maplibre.LatLng(42.699, 0.512),
+            maplibre.LatLng(42.703, 0.526),
+          ]
+        : widget.points
+              .map((point) => maplibre.LatLng(point.latitude, point.longitude))
+              .toList();
+    _trailLine = await controller.addLine(
+      maplibre.LineOptions(
+        geometry: geometry,
+        lineColor: widget.points.isEmpty ? '#C66D39' : '#0878F9',
+        lineWidth: 4,
+        lineOpacity: 0.95,
+        lineJoin: 'round',
+      ),
+    );
+  }
+}
+
 class _OfflineMapButton extends StatelessWidget {
-  const _OfflineMapButton({required this.saved, required this.onPressed});
+  const _OfflineMapButton({
+    required this.saved,
+    required this.downloading,
+    required this.progress,
+    required this.downloadedBytes,
+    required this.supported,
+    required this.onPressed,
+  });
 
   final bool saved;
+  final bool downloading;
+  final double progress;
+  final int downloadedBytes;
+  final bool supported;
   final VoidCallback onPressed;
+
+  String get _downloadSize {
+    if (downloadedBytes <= 0) return 'Preparing map…';
+    if (downloadedBytes < 1024 * 1024) {
+      return '${(downloadedBytes / 1024).round()} KB downloaded';
+    }
+    return '${(downloadedBytes / (1024 * 1024)).toStringAsFixed(1)} MB downloaded';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -784,31 +994,87 @@ class _OfflineMapButton extends StatelessWidget {
       color: _ink,
       borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
       child: InkWell(
-        onTap: onPressed,
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
         child: SizedBox(
-          height: 58,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                saved ? 'Map saved offline' : 'Save map offline',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+          height: 64,
+          child: downloading
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 9,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.downloading_rounded,
+                            color: Colors.white,
+                            size: 19,
+                          ),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            child: Text(
+                              _downloadSize,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${(progress * 100).round()}%',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      LinearProgressIndicator(
+                        value: progress == 0 ? null : progress,
+                        minHeight: 4,
+                        borderRadius: BorderRadius.circular(4),
+                        backgroundColor: Colors.white24,
+                        color: const Color(0xFF95D7B4),
+                      ),
+                    ],
+                  ),
+                )
+              : InkWell(
+                  onTap: onPressed,
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        saved
+                            ? 'Map saved · tap to remove'
+                            : supported
+                            ? 'Download map for offline use'
+                            : 'Offline maps: mobile app only',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Icon(
+                        saved
+                            ? Icons.check_circle_outline_rounded
+                            : supported
+                            ? Icons.wifi_off_rounded
+                            : Icons.info_outline_rounded,
+                        color: Colors.white,
+                        size: 21,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Icon(
-                saved
-                    ? Icons.check_circle_outline_rounded
-                    : Icons.wifi_off_rounded,
-                color: Colors.white,
-                size: 23,
-              ),
-            ],
-          ),
         ),
       ),
     );

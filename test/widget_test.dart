@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart' show CustomScrollView;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trailoff/hike_recording.dart';
 import 'package:trailoff/main.dart';
+import 'package:trailoff/offline_map.dart';
 
 void main() {
   testWidgets('records GPS points and saves a hike to history', (
@@ -10,8 +12,15 @@ void main() {
   ) async {
     final locationSource = _FakeLocationSource();
     final historyStore = _MemoryHikeHistoryStore();
+    final offlineMaps = _FakeOfflineMapRepository();
     await tester.pumpWidget(
-      TrailOffApp(locationSource: locationSource, historyStore: historyStore),
+      TrailOffApp(
+        locationSource: locationSource,
+        historyStore: historyStore,
+        offlineMapRepository: offlineMaps,
+        offlineMapSupported: true,
+        nativeMapSupported: false,
+      ),
     );
     await tester.pumpAndSettle();
     addTearDown(locationSource.close);
@@ -53,6 +62,31 @@ void main() {
     expect(historyStore.hikes.single.elevationGainMeters, 12);
     expect(find.textContaining('GPS points'), findsNWidgets(2));
     expect(find.text('Past adventures'), findsOneWidget);
+
+    await tester.dragUntilVisible(
+      find.text('Download map for offline use'),
+      find.byType(CustomScrollView),
+      const Offset(0, 500),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Download map for offline use'));
+    await tester.pump();
+    expect(find.text('0%'), findsOneWidget);
+    offlineMaps.reportProgress(0.5, 512 * 1024);
+    await tester.pump();
+    expect(find.text('50%'), findsOneWidget);
+    expect(find.text('512 KB downloaded'), findsOneWidget);
+    offlineMaps.complete();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.text('Map saved · tap to remove'), findsOneWidget);
+    expect(offlineMaps.lastCreatedRegionId, 27);
+
+    await tester.tap(find.text('Map saved · tap to remove'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(offlineMaps.deletedRegionIds, [27]);
+    expect(find.text('Download map for offline use'), findsOneWidget);
 
     final savedHike = historyStore.hikes.single;
     final gpx = toGpx(savedHike, name: 'Trail & <ridge>');
@@ -98,6 +132,36 @@ class _FakeLocationSource implements HikeLocationSource {
   void add(HikePoint point) => _controller.add(point);
 
   Future<void> close() => _controller.close();
+}
+
+class _FakeOfflineMapRepository implements OfflineMapRepository {
+  void Function(double progress, int downloadedBytes)? _onProgress;
+  void Function()? _onComplete;
+  int? lastCreatedRegionId;
+  final deletedRegionIds = <int>[];
+
+  @override
+  Future<OfflineMapRegion?> findTourRegion() async => null;
+
+  @override
+  Future<int> downloadTourRegion({
+    required void Function(double progress, int downloadedBytes) onProgress,
+    required void Function() onComplete,
+    required void Function(String message) onError,
+  }) async {
+    _onProgress = onProgress;
+    _onComplete = onComplete;
+    lastCreatedRegionId = 27;
+    return 27;
+  }
+
+  void reportProgress(double progress, int bytes) =>
+      _onProgress!(progress, bytes);
+
+  void complete() => _onComplete!();
+
+  @override
+  Future<void> deleteRegion(int id) async => deletedRegionIds.add(id);
 }
 
 class _MemoryHikeHistoryStore implements HikeHistoryStore {
