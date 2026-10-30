@@ -1,0 +1,224 @@
+import 'package:flutter/material.dart';
+
+import 'route_recommendations.dart';
+
+class PackingItem {
+  const PackingItem({
+    required this.id,
+    required this.label,
+    required this.reason,
+  });
+
+  final String id;
+  final String label;
+  final String reason;
+}
+
+List<PackingItem> packingChecklistFor({
+  required HikingAbility ability,
+  required TrailConditions conditions,
+}) {
+  final items = <PackingItem>[
+    PackingItem(
+      id: 'water',
+      label: 'Water',
+      reason: switch (ability) {
+        HikingAbility.beginner => 'At least 1.5 L for a shorter hike',
+        HikingAbility.intermediate => 'At least 2 L for a longer day out',
+        HikingAbility.advanced => 'Plan extra water for a full-day route',
+      },
+    ),
+    const PackingItem(
+      id: 'navigation',
+      label: 'Navigation',
+      reason: 'Carry a map and know your route before setting out',
+    ),
+    const PackingItem(
+      id: 'first-aid',
+      label: 'First-aid kit',
+      reason: 'Bring basic first aid and any personal medication',
+    ),
+    const PackingItem(
+      id: 'light',
+      label: 'Headlamp',
+      reason: 'Keep a light available if your hike takes longer than planned',
+    ),
+  ];
+
+  switch (conditions) {
+    case TrailConditions.dry:
+      items.add(
+        const PackingItem(
+          id: 'sun-protection',
+          label: 'Sun protection',
+          reason: 'Pack sunscreen, sunglasses, and a hat',
+        ),
+      );
+    case TrailConditions.wet:
+      items.add(
+        const PackingItem(
+          id: 'waterproof-shell',
+          label: 'Waterproof shell',
+          reason: 'Wet rocks and roots can be slippery',
+        ),
+      );
+    case TrailConditions.snowy:
+      items
+        ..add(
+          const PackingItem(
+            id: 'traction',
+            label: 'Traction devices',
+            reason: 'Check snow and ice reports before you go',
+          ),
+        )
+        ..add(
+          const PackingItem(
+            id: 'warm-layers',
+            label: 'Warm layers',
+            reason: 'Bring insulating layers for cold conditions',
+          ),
+        );
+    case TrailConditions.hot:
+      items
+        ..add(
+          const PackingItem(
+            id: 'extra-water',
+            label: 'Extra water',
+            reason: 'Carry more water and plan shaded breaks',
+          ),
+        )
+        ..add(
+          const PackingItem(
+            id: 'sun-protection',
+            label: 'Sun protection',
+            reason: 'Pack sunscreen, sunglasses, and a hat',
+          ),
+        );
+  }
+  return List.unmodifiable(items);
+}
+
+class PackingChecklist extends StatefulWidget {
+  const PackingChecklist({
+    super.key,
+    required this.ability,
+    required this.conditions,
+  });
+
+  final HikingAbility ability;
+  final TrailConditions conditions;
+
+  @override
+  State<PackingChecklist> createState() => _PackingChecklistState();
+}
+
+class _PackingChecklistState extends State<PackingChecklist> {
+  final Set<String> _checkedItems = {};
+
+  @override
+  void didUpdateWidget(covariant PackingChecklist oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.ability != widget.ability ||
+        oldWidget.conditions != widget.conditions) {
+      _checkedItems.clear();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = packingChecklistFor(
+      ability: widget.ability,
+      conditions: widget.conditions,
+    );
+    final checkedCount = items
+        .where((item) => _checkedItems.contains(item.id))
+        .length;
+    return Container(
+      key: const Key('packing-checklist'),
+      padding: const EdgeInsets.fromLTRB(15, 14, 15, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFBF9),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.backpack_outlined, color: Color(0xFF3E8967)),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Packing checklist',
+                  style: TextStyle(
+                    color: Color(0xFF292D2B),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              Text(
+                '$checkedCount/${items.length}',
+                key: const Key('packing-progress'),
+                style: const TextStyle(
+                  color: Color(0xFF3E8967),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          const Text(
+            'Suggested essentials · check off what you have packed',
+            style: TextStyle(color: Color(0xFF777E79), fontSize: 11),
+          ),
+          const SizedBox(height: 8),
+          ...items.map((item) {
+            final checked = _checkedItems.contains(item.id);
+            return Material(
+              color: Colors.transparent,
+              child: CheckboxListTile(
+                key: Key('packing-${item.id}'),
+                value: checked,
+                onChanged: (value) => setState(() {
+                  if (value ?? false) {
+                    _checkedItems.add(item.id);
+                  } else {
+                    _checkedItems.remove(item.id);
+                  }
+                }),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                activeColor: const Color(0xFF3E8967),
+                title: Text(
+                  item.label,
+                  style: const TextStyle(
+                    color: Color(0xFF292D2B),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                subtitle: Text(
+                  item.reason,
+                  style: const TextStyle(
+                    color: Color(0xFF777E79),
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            );
+          }),
+          const Padding(
+            padding: EdgeInsets.only(top: 5, bottom: 3),
+            child: Text(
+              'General guidance only. Review local conditions and bring gear appropriate to your trip.',
+              style: TextStyle(color: Color(0xFF858B86), fontSize: 10),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

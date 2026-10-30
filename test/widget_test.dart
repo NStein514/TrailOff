@@ -1,13 +1,58 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show CustomScrollView, Key;
+import 'package:flutter/material.dart'
+    show CustomScrollView, Key, MaterialApp, Scaffold, SingleChildScrollView;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trailoff/hike_recording.dart';
 import 'package:trailoff/main.dart';
 import 'package:trailoff/offline_map.dart';
+import 'package:trailoff/packing_checklist.dart';
 import 'package:trailoff/route_recommendations.dart';
 
 void main() {
+  testWidgets('packing checklist adapts and tracks checked items', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: PackingChecklist(
+              ability: HikingAbility.beginner,
+              conditions: TrailConditions.hot,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Extra water'), findsOneWidget);
+    expect(find.text('Sun protection'), findsOneWidget);
+    expect(find.textContaining('1.5 L'), findsOneWidget);
+    expect(find.text('0/6'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('packing-water')));
+    await tester.pumpAndSettle();
+    expect(find.text('1/6'), findsOneWidget);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: PackingChecklist(
+              ability: HikingAbility.advanced,
+              conditions: TrailConditions.snowy,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Traction devices'), findsOneWidget);
+    expect(find.text('Warm layers'), findsOneWidget);
+    expect(find.textContaining('full-day route'), findsOneWidget);
+  });
+
   test('route suggestions respect ability and conditions', () {
     final nearLimit = _savedHike(distanceMeters: 5600, ascentMeters: 260);
     final moderate = _savedHike(distanceMeters: 4200, ascentMeters: 195);
@@ -89,8 +134,6 @@ void main() {
     expect(historyStore.hikes, hasLength(1));
     expect(historyStore.hikes.single.points, hasLength(2));
     expect(historyStore.hikes.single.elevationGainMeters, 12);
-    expect(find.textContaining('GPS points'), findsNWidgets(2));
-    expect(find.text('Past adventures'), findsOneWidget);
     expect(find.text('Route finder'), findsOneWidget);
     expect(find.text('SUGGESTED FROM YOUR HIKES'), findsOneWidget);
 
@@ -101,6 +144,7 @@ void main() {
     await tester.tap(find.text('Wet').last);
     await tester.pumpAndSettle();
     expect(find.textContaining('waterproof shell'), findsOneWidget);
+    expect(find.text('Waterproof shell'), findsOneWidget);
 
     await tester.dragUntilVisible(
       find.text('Download map for offline use'),
@@ -142,12 +186,17 @@ void main() {
     expect(RegExp(r'<trkpt\s').allMatches(gpx), hasLength(2));
     expect(gpx, contains('Trail &amp; &lt;ridge&gt;'));
     expect(gpxFileName(savedHike.startedAt), endsWith('.gpx'));
-    await tester.dragUntilVisible(
-      find.text('Past adventures'),
-      find.byType(CustomScrollView),
-      const Offset(0, -500),
-    );
-    await tester.pumpAndSettle();
+    final dashboardScroll = find.byType(CustomScrollView);
+    for (
+      var attempt = 0;
+      attempt < 12 && find.byTooltip('Share GPX').evaluate().isEmpty;
+      attempt++
+    ) {
+      await tester.drag(dashboardScroll, const Offset(0, -450));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('Past adventures'), findsOneWidget);
+    expect(find.textContaining('2 GPS points'), findsOneWidget);
     expect(find.byTooltip('Share GPX'), findsOneWidget);
   });
 }

@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import 'hike_recording.dart';
 import 'offline_map.dart';
+import 'packing_checklist.dart';
 import 'route_recommendations.dart';
 
 void main() {
@@ -380,6 +381,11 @@ class _HikeDashboardState extends State<HikeDashboard> {
                         setState(() => _hikingAbility = value),
                     onConditionsChanged: (value) =>
                         setState(() => _trailConditions = value),
+                  ),
+                  const SizedBox(height: 12),
+                  PackingChecklist(
+                    ability: _hikingAbility,
+                    conditions: _trailConditions,
                   ),
                   const SizedBox(height: 20),
                   _HikeHistory(
