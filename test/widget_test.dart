@@ -1,12 +1,41 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show CustomScrollView;
+import 'package:flutter/material.dart' show CustomScrollView, Key;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trailoff/hike_recording.dart';
 import 'package:trailoff/main.dart';
 import 'package:trailoff/offline_map.dart';
+import 'package:trailoff/route_recommendations.dart';
 
 void main() {
+  test('route suggestions respect ability and conditions', () {
+    final nearLimit = _savedHike(distanceMeters: 5600, ascentMeters: 260);
+    final moderate = _savedHike(distanceMeters: 4200, ascentMeters: 195);
+    final tooLong = _savedHike(distanceMeters: 9000, ascentMeters: 300);
+
+    final dry = recommendSavedRoute(
+      hikes: [nearLimit, moderate, tooLong],
+      ability: HikingAbility.beginner,
+      conditions: TrailConditions.dry,
+    );
+    expect(dry?.hike, nearLimit);
+
+    final wet = recommendSavedRoute(
+      hikes: [nearLimit, moderate, tooLong],
+      ability: HikingAbility.beginner,
+      conditions: TrailConditions.wet,
+    );
+    expect(wet?.hike, moderate);
+    expect(wet?.reason, contains('wet conditions'));
+
+    final snowy = recommendSavedRoute(
+      hikes: [nearLimit, moderate, tooLong],
+      ability: HikingAbility.beginner,
+      conditions: TrailConditions.snowy,
+    );
+    expect(snowy, isNull);
+  });
+
   testWidgets('records GPS points and saves a hike to history', (
     WidgetTester tester,
   ) async {
@@ -62,6 +91,16 @@ void main() {
     expect(historyStore.hikes.single.elevationGainMeters, 12);
     expect(find.textContaining('GPS points'), findsNWidgets(2));
     expect(find.text('Past adventures'), findsOneWidget);
+    expect(find.text('Route finder'), findsOneWidget);
+    expect(find.text('SUGGESTED FROM YOUR HIKES'), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('conditions-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('conditions-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Wet').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('waterproof shell'), findsOneWidget);
 
     await tester.dragUntilVisible(
       find.text('Download map for offline use'),
@@ -103,8 +142,42 @@ void main() {
     expect(RegExp(r'<trkpt\s').allMatches(gpx), hasLength(2));
     expect(gpx, contains('Trail &amp; &lt;ridge&gt;'));
     expect(gpxFileName(savedHike.startedAt), endsWith('.gpx'));
+    await tester.dragUntilVisible(
+      find.text('Past adventures'),
+      find.byType(CustomScrollView),
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
     expect(find.byTooltip('Share GPX'), findsOneWidget);
   });
+}
+
+SavedHike _savedHike({
+  required double distanceMeters,
+  required double ascentMeters,
+}) {
+  final startedAt = DateTime(2026, 10, 30);
+  return SavedHike(
+    startedAt: startedAt,
+    finishedAt: startedAt.add(const Duration(hours: 2)),
+    durationSeconds: 7200,
+    distanceMeters: distanceMeters,
+    elevationGainMeters: ascentMeters,
+    points: [
+      HikePoint(
+        latitude: 46.8,
+        longitude: 0,
+        altitude: 100,
+        timestamp: startedAt,
+      ),
+      HikePoint(
+        latitude: 46.81,
+        longitude: 0.01,
+        altitude: 100 + ascentMeters,
+        timestamp: startedAt.add(const Duration(hours: 1)),
+      ),
+    ],
+  );
 }
 
 HikePoint _point({

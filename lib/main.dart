@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import 'hike_recording.dart';
 import 'offline_map.dart';
+import 'route_recommendations.dart';
 
 void main() {
   runApp(const TrailOffApp());
@@ -90,6 +91,8 @@ class _HikeDashboardState extends State<HikeDashboard> {
   bool _isRecording = false;
   bool _hasRecordedSession = false;
   bool _isLoadingHistory = true;
+  HikingAbility _hikingAbility = HikingAbility.beginner;
+  TrailConditions _trailConditions = TrailConditions.dry;
   bool _mapSaved = false;
   bool _mapDownloading = false;
   double _mapDownloadProgress = 0;
@@ -367,6 +370,16 @@ class _HikeDashboardState extends State<HikeDashboard> {
                     elevationGainMeters: _elevationGainMeters,
                     latestPoint: _latestPoint,
                     points: _recordedPoints,
+                  ),
+                  const SizedBox(height: 20),
+                  _RouteAdvisor(
+                    hikes: _savedHikes,
+                    ability: _hikingAbility,
+                    conditions: _trailConditions,
+                    onAbilityChanged: (value) =>
+                        setState(() => _hikingAbility = value),
+                    onConditionsChanged: (value) =>
+                        setState(() => _trailConditions = value),
                   ),
                   const SizedBox(height: 20),
                   _HikeHistory(
@@ -1079,6 +1092,213 @@ class _OfflineMapButton extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RouteAdvisor extends StatelessWidget {
+  const _RouteAdvisor({
+    required this.hikes,
+    required this.ability,
+    required this.conditions,
+    required this.onAbilityChanged,
+    required this.onConditionsChanged,
+  });
+
+  final List<SavedHike> hikes;
+  final HikingAbility ability;
+  final TrailConditions conditions;
+  final ValueChanged<HikingAbility> onAbilityChanged;
+  final ValueChanged<TrailConditions> onConditionsChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final recommendation = recommendSavedRoute(
+      hikes: hikes,
+      ability: ability,
+      conditions: conditions,
+    );
+    return Container(
+      key: const Key('route-advisor'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFBF9),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0B24352C),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.route_rounded, color: _forest, size: 19),
+              SizedBox(width: 8),
+              Text(
+                'Route finder',
+                style: TextStyle(
+                  color: _ink,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 17,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Match a route to your ability and today’s conditions.',
+            style: TextStyle(color: Color(0xFF777E79), fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<HikingAbility>(
+                  key: const Key('ability-selector'),
+                  initialValue: ability,
+                  decoration: const InputDecoration(
+                    labelText: 'Ability',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 9,
+                    ),
+                  ),
+                  items: HikingAbility.values
+                      .map(
+                        (item) => DropdownMenuItem(
+                          value: item,
+                          child: Text(item.label),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) onAbilityChanged(value);
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonFormField<TrailConditions>(
+                  key: const Key('conditions-selector'),
+                  initialValue: conditions,
+                  decoration: const InputDecoration(
+                    labelText: 'Conditions',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 9,
+                    ),
+                  ),
+                  items: TrailConditions.values
+                      .map(
+                        (item) => DropdownMenuItem(
+                          value: item,
+                          child: Text(
+                            item.label,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) onConditionsChanged(value);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (recommendation == null)
+            const _RecommendationMessage(
+              icon: Icons.explore_outlined,
+              text:
+                  'No saved route fits these settings yet. Record another hike or adjust your choices.',
+            )
+          else ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                color: _paper,
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'SUGGESTED FROM YOUR HIKES',
+                    style: TextStyle(
+                      color: _forest,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 9,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '${_HikeHistory._monthName(recommendation.hike.startedAt.month)} ${recommendation.hike.startedAt.day}, ${recommendation.hike.startedAt.year}',
+                    style: const TextStyle(
+                      color: _ink,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${(recommendation.hike.distanceMeters / 1000).toStringAsFixed(1)} km · +${recommendation.hike.elevationGainMeters.round()} m ascent · ${(recommendation.hike.durationSeconds / 60).round()} min',
+                    style: const TextStyle(
+                      color: Color(0xFF5F6862),
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    '${recommendation.reason} ${conditions.preparationTip}',
+                    style: const TextStyle(
+                      color: Color(0xFF68716B),
+                      fontSize: 11,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          const Text(
+            'Uses your recorded hikes and self-reported conditions; not live weather or trail-closure data.',
+            style: TextStyle(color: Color(0xFF858B86), fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecommendationMessage extends StatelessWidget {
+  const _RecommendationMessage({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, color: _forest, size: 18),
+      const SizedBox(width: 8),
+      Expanded(
+        child: Text(
+          text,
+          style: const TextStyle(color: Color(0xFF68716B), fontSize: 12),
+        ),
+      ),
+    ],
+  );
 }
 
 class _HikeHistory extends StatelessWidget {
