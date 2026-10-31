@@ -7,6 +7,7 @@ import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
 import 'package:share_plus/share_plus.dart';
 
 import 'hike_recording.dart';
+import 'constellation.dart';
 import 'offline_map.dart';
 import 'packing_checklist.dart';
 import 'route_recommendations.dart';
@@ -333,6 +334,18 @@ class _HikeDashboardState extends State<HikeDashboard> {
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   const _Wordmark(),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.auto_awesome),
+                      label: const Text('Constellation'),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const ConstellationPage(),
+                        ),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 22),
                   const Text(
                     'Track your progress\nand stay on trail',

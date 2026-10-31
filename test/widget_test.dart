@@ -99,7 +99,13 @@ void main() {
     await tester.pumpAndSettle();
     addTearDown(locationSource.close);
 
-    await tester.ensureVisible(find.text('Record a hike'));
+    await tester.tap(find.text('Constellation'));
+    await tester.pumpAndSettle();
+    expect(find.text('Your campsite sky'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('Record a hike'), 250);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Record a hike'));
     await tester.pump();
