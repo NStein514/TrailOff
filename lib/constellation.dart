@@ -26,6 +26,9 @@ class _ConstellationPageState extends State<ConstellationPage>
   static const _channel = EventChannel('trailoff/sky_orientation');
   late final SatelliteRepository _satellites;
   StreamSubscription<dynamic>? _motion;
+  Future<void> _motionCancellation = Future<void>.value();
+  int _motionGeneration = 0, _locationGeneration = 0;
+  bool _locationRequested = false;
   Timer? _timer;
   Position? _location;
   late DateTime _now;
@@ -85,10 +88,11 @@ class _ConstellationPageState extends State<ConstellationPage>
   }
 
   Future<void> _start() async {
-    if (_locating) return;
+    if (_locating || !_active) return;
+    _locationRequested = true;
+    final request = ++_locationGeneration;
     _generation++;
-    _motion?.cancel();
-    _motion = null;
+    _stopMotion();
     setState(() {
       _locating = true;
       _location = null;
@@ -100,7 +104,7 @@ class _ConstellationPageState extends State<ConstellationPage>
     });
     try {
       final p = await (widget.locate ?? _locate)();
-      if (!mounted) return;
+      if (!mounted || request != _locationGeneration) return;
       _generation++;
       setState(() {
         _location = p;
@@ -113,22 +117,40 @@ class _ConstellationPageState extends State<ConstellationPage>
       if (_active) _startMotion();
       if (_enabled && _active) _loadSatellites();
     } catch (error) {
-      if (mounted) {
+      if (mounted && request == _locationGeneration) {
         setState(
           () => _locationStatus =
               'Location unavailable. Check permission and GPS, then retry.',
         );
       }
     } finally {
-      if (mounted) setState(() => _locating = false);
+      if (mounted && request == _locationGeneration) {
+        setState(() => _locating = false);
+      }
     }
   }
 
-  Future<void> _startMotion() async {
-    await _motion?.cancel();
-    if (!mounted || !_active || _location == null) return;
+  // Serialize native channel teardown before subscribing again. Pending callbacks
+  // carry a generation so a cancelled session cannot realign the resumed chart.
+  void _stopMotion() {
+    _motionGeneration++;
+    final subscription = _motion;
+    _motion = null;
+    if (subscription != null) _motionCancellation = subscription.cancel();
     _matrix = null;
     _lastMotion = null;
+  }
+
+  Future<void> _startMotion() async {
+    _stopMotion();
+    final generation = _motionGeneration;
+    await _motionCancellation;
+    if (!mounted ||
+        !_active ||
+        _location == null ||
+        generation != _motionGeneration) {
+      return;
+    }
     _motion =
         (widget.orientation ??
                 _channel.receiveBroadcastStream({
@@ -138,20 +160,34 @@ class _ConstellationPageState extends State<ConstellationPage>
                 }))
             .listen(
               (event) {
-                if (!mounted || !_active) return;
-                final values = (event as List)
-                    .map((v) => (v as num).toDouble())
-                    .toList();
-                if (values.length != 9 || values.any((v) => !v.isFinite)) {
+                if (!mounted || !_active || generation != _motionGeneration) {
                   return;
                 }
+                if (event is! List ||
+                    event.length != 9 ||
+                    event.any((v) => v is! num || !v.isFinite)) {
+                  setState(() {
+                    _matrix = null;
+                    _lastMotion = null;
+                  });
+                  return;
+                }
+                final values = event.map((v) => (v as num).toDouble()).toList();
                 setState(() {
                   _matrix = values;
                   _lastMotion = _clock();
                 });
               },
               onError: (Object _) {
-                if (mounted) {
+                if (mounted && generation == _motionGeneration) {
+                  setState(() {
+                    _matrix = null;
+                    _lastMotion = null;
+                  });
+                }
+              },
+              onDone: () {
+                if (mounted && generation == _motionGeneration) {
                   setState(() {
                     _matrix = null;
                     _lastMotion = null;
@@ -200,17 +236,25 @@ class _ConstellationPageState extends State<ConstellationPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _active = state == AppLifecycleState.resumed;
+    // Permission dialogs can make the app inactive without backgrounding it.
+    // Keep that request alive; invalidate it only when the app is hidden/paused.
+    if ((state == AppLifecycleState.paused ||
+            state == AppLifecycleState.hidden) &&
+        _locating) {
+      _locationGeneration++;
+      _locating = false;
+    }
+    final active = state == AppLifecycleState.resumed;
+    if (active == _active) return;
+    _active = active;
     if (!_active) {
       _generation++;
-      _motion?.cancel();
-      _motion = null;
-      _matrix = null;
+      _stopMotion();
       _tracks = [];
       _fetchedAt = null;
     } else {
       _now = _clock();
-      if (_location != null) _start();
+      if (_locationRequested) _start();
     }
   }
 
@@ -218,21 +262,24 @@ class _ConstellationPageState extends State<ConstellationPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
-    _motion?.cancel();
+    _stopMotion();
     if (widget.satellites == null) _satellites.close();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final clockNow = _clock();
     final sensorReady =
         _matrix != null &&
         _lastMotion != null &&
-        _now.difference(_lastMotion!).inSeconds < 3;
+        !clockNow.isBefore(_lastMotion!) &&
+        clockNow.difference(_lastMotion!).inMilliseconds < 3000;
     final manual = _manual || !sensorReady;
     final current =
         _enabled &&
         _fetchedAt != null &&
+        !_now.isBefore(_fetchedAt!) &&
         _now.difference(_fetchedAt!).inSeconds < 300;
     final visible = current
         ? _tracks
