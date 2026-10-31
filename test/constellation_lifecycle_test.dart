@@ -25,6 +25,7 @@ Future<void> showSky(
   required Future<Position> Function() locate,
   required Stream<dynamic> orientation,
   SatelliteRepository? repository,
+  DateTime Function()? clock,
 }) async {
   tester.view.physicalSize = const Size(1000, 2000);
   tester.view.devicePixelRatio = 1;
@@ -38,6 +39,7 @@ Future<void> showSky(
         locate: locate,
         orientation: orientation,
         satellites: satellites,
+        clock: clock,
       ),
     ),
   );
@@ -61,6 +63,53 @@ Future<void> resume(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('expired positions are not reported as no visible satellites', (
+    tester,
+  ) async {
+    var now = DateTime.utc(2026, 10, 31);
+    final repository = PendingSatellites();
+    final motion = StreamController<dynamic>.broadcast();
+    await showSky(
+      tester,
+      repository: repository,
+      clock: () => now,
+      orientation: motion.stream,
+      locate: () async => position(40),
+    );
+    await tester.tap(
+      find.widgetWithText(SwitchListTile, 'Live satellite predictions'),
+    );
+    await tester.pump();
+    repository.requests.single.complete([
+      SatelliteTrack([
+        for (var i = 0; i < 3; i++)
+          SatelliteSample(
+            'ISS',
+            now.add(Duration(seconds: i)),
+            SkyVector.horizontal(0, 45),
+          ),
+      ], []),
+    ]);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('No full-visibility predictions for ISS or Hubble now.'),
+      findsOneWidget,
+    );
+    now = now.add(const Duration(seconds: 3));
+    await tester.pump(const Duration(seconds: 3));
+    expect(
+      find.text('No full-visibility predictions for ISS or Hubble now.'),
+      findsNothing,
+    );
+    expect(
+      find.textContaining('do not cover the current time'),
+      findsOneWidget,
+    );
+    expect(repository.requests, hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+    unawaited(motion.close());
+    await tester.pump();
+  });
   testWidgets(
     'permission-dialog inactivity does not duplicate a pending location request',
     (tester) async {

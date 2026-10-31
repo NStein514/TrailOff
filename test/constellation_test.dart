@@ -57,12 +57,14 @@ void main() {
       var requests = 0;
       final repository = SatelliteRepository(
         apiKey: 'test-key',
+        clock: () => DateTime.fromMillisecondsSinceEpoch(1050000, isUtc: true),
         client: MockClient((request) async {
           requests++;
           expect(request.url.scheme, 'https');
           if (request.url.path.contains('visualpasses')) {
             return http.Response(
               jsonEncode({
+                'info': {'satid': int.parse(request.url.pathSegments[4])},
                 'passes': [
                   {'startUTC': 1000, 'endUTC': 1100, 'duration': 100},
                   {'startUTC': 1200, 'endUTC': 1300, 'duration': 30},
@@ -73,9 +75,10 @@ void main() {
           }
           return http.Response(
             jsonEncode({
+              'info': {'satid': int.parse(request.url.pathSegments[4])},
               'positions': [
-                {'timestamp': 1050, 'azimuth': 359, 'elevation': 40},
-                {'timestamp': 1250, 'azimuth': 0, 'elevation': 40},
+                for (var s = 1050; s <= 1250; s++)
+                  {'timestamp': s, 'azimuth': 359, 'elevation': 40},
               ],
             }),
             200,
@@ -90,7 +93,7 @@ void main() {
         isNotNull,
       );
       expect(
-        tracks.first.visibleAt(DateTime.fromMillisecondsSinceEpoch(1052000)),
+        tracks.first.visibleAt(DateTime.fromMillisecondsSinceEpoch(1352000)),
         isNull,
       );
       expect(

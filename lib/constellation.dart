@@ -280,7 +280,9 @@ class _ConstellationPageState extends State<ConstellationPage>
         _enabled &&
         _fetchedAt != null &&
         !_now.isBefore(_fetchedAt!) &&
-        _now.difference(_fetchedAt!).inSeconds < 300;
+        _now.difference(_fetchedAt!).inSeconds < 300 &&
+        _tracks.isNotEmpty &&
+        _tracks.every((track) => track.positionAt(_now) != null);
     final visible = current
         ? _tracks
               .map((t) => t.visibleAt(_now))
@@ -407,7 +409,11 @@ class _ConstellationPageState extends State<ConstellationPage>
                       : '${visible.map((s) => s.name).join(', ')} predicted above the horizon; may be outside this view.',
                 ),
               if (!current && !_loading)
-                const Text('No current satellite positions to display.'),
+                Text(
+                  _fetchedAt == null
+                      ? 'No current satellite positions to display.'
+                      : 'Satellite positions do not cover the current time. Waiting for fresh predictions.',
+                ),
             ],
             const SizedBox(height: 12),
             const Text(
