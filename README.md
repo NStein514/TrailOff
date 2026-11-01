@@ -1,6 +1,6 @@
 # TrailOff
 
-TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue with route geometry, plan-aware recording with off-route warnings, on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a plan-aware packing checklist, offline trail answers, and a Constellation sky view.
+TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue with route geometry, plan-aware recording with off-route warnings, on-device hike history with photo albums per trip, GPX sharing, offline map regions, saved-route recommendations, a plan-aware packing checklist, offline trail answers, and a Constellation sky view.
 
 ## Product scope
 
@@ -33,6 +33,14 @@ While a plan is active, the live hike card gains a **Back to _trail_ trailhead**
 Recording also watches where you are relative to the planned line. Once the latest fix is more than 200 m from the nearest point of the route, the card shows an off-route warning with that distance rounded to the nearest 10 m. The warning only clears once you are back within 120 m, so GPS noise at the boundary cannot flicker it. Distances are straight-line and measured against the drawn sample geometry, so they describe how far you are from the line on the map and nothing more — it cannot see cliffs, rivers or private land between you and that line, and it is not a safety system.
 
 Saving a hike records which trail it was planned for. **Past adventures** then lists the trail under the date, and the shared GPX track is named after it. Hikes saved before planning existed still load and simply have no trail.
+
+## Trip photo albums
+
+Every saved adventure has an album. In **Past adventures**, tap the photo button on a trip row — it carries a count badge once photos exist — to open that trip's album. From there **Take photo** opens the system camera and the gallery action adds an existing picture from the library. Photos are copied into the app's private documents folder, with their trip association kept alongside the hike's start time, so albums survive restarts without an account, a network call, or access to the device's shared gallery.
+
+Photos appear as a two-column grid; tapping one opens it full screen (pinch to zoom) with its capture time, and deleting it asks for confirmation first and removes the file from the device. Photos are stored at a maximum of 2000 px and 85% quality.
+
+Limits: photos can only be added once a hike is saved, not while it is being recorded. There is no backup, sync or export — photos live in app storage and are lost if the app is uninstalled — and GPX export does not include them. EXIF location and camera metadata are not read or displayed, and the album does not know where a photo was taken.
 
 ## Packing for the plan
 

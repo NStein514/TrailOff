@@ -21,6 +21,8 @@ import 'trail_fit_badge.dart';
 import 'trail_geometry.dart';
 import 'trail_guide.dart';
 import 'trail_plan.dart';
+import 'trip_album_page.dart';
+import 'trip_photos.dart';
 
 void main() {
   runApp(const TrailOffApp());
@@ -40,6 +42,8 @@ class TrailOffApp extends StatelessWidget {
     this.nativeMapSupported,
     this.trailGuideStore,
     this.trailPlanStore,
+    this.tripPhotoStore,
+    this.tripPhotoPicker,
   });
 
   final HikeLocationSource? locationSource;
@@ -49,6 +53,8 @@ class TrailOffApp extends StatelessWidget {
   final bool? nativeMapSupported;
   final TrailGuideStore? trailGuideStore;
   final TrailPlanStore? trailPlanStore;
+  final TripPhotoStore? tripPhotoStore;
+  final TripPhotoPicker? tripPhotoPicker;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +75,8 @@ class TrailOffApp extends StatelessWidget {
         nativeMapSupported: nativeMapSupported,
         trailGuideStore: trailGuideStore,
         trailPlanStore: trailPlanStore,
+        tripPhotoStore: tripPhotoStore,
+        tripPhotoPicker: tripPhotoPicker,
       ),
     );
   }
@@ -84,6 +92,8 @@ class HikeDashboard extends StatefulWidget {
     this.nativeMapSupported,
     this.trailGuideStore,
     this.trailPlanStore,
+    this.tripPhotoStore,
+    this.tripPhotoPicker,
   });
 
   final HikeLocationSource? locationSource;
@@ -93,6 +103,8 @@ class HikeDashboard extends StatefulWidget {
   final bool? nativeMapSupported;
   final TrailGuideStore? trailGuideStore;
   final TrailPlanStore? trailPlanStore;
+  final TripPhotoStore? tripPhotoStore;
+  final TripPhotoPicker? tripPhotoPicker;
 
   @override
   State<HikeDashboard> createState() => _HikeDashboardState();
@@ -136,6 +148,10 @@ class _HikeDashboardState extends State<HikeDashboard> {
 
   late final OfflineMapRepository _offlineMapRepository;
   late final TrailPlanStore _planStore;
+  late final TripPhotoStore _photoStore;
+
+  /// Photo totals per saved trip, keyed like the stored photos.
+  Map<String, int> _photoCounts = const {};
 
   Trail? get _plannedTrail =>
       plannedTrail(sampleTrailCatalogue, _plannedTrailId);
@@ -153,8 +169,39 @@ class _HikeDashboardState extends State<HikeDashboard> {
     _offlineMapRepository =
         widget.offlineMapRepository ?? MapLibreOfflineMapRepository();
     _planStore = widget.trailPlanStore ?? SharedPreferencesTrailPlanStore();
+    _photoStore = widget.tripPhotoStore ?? FileTripPhotoStore();
     _loadHistory();
     _loadPlan();
+    _loadPhotoCounts();
+  }
+
+  Future<void> _loadPhotoCounts() async {
+    Map<String, int> counts;
+    try {
+      final photos = await _photoStore.loadAll();
+      counts = <String, int>{};
+      for (final photo in photos) {
+        counts[photo.tripKey] = (counts[photo.tripKey] ?? 0) + 1;
+      }
+    } catch (_) {
+      counts = const {};
+    }
+    if (!mounted) return;
+    setState(() => _photoCounts = counts);
+  }
+
+  Future<void> _openAlbum(SavedHike hike) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => TripAlbumPage(
+          trip: hike,
+          store: _photoStore,
+          picker: widget.tripPhotoPicker,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    await _loadPhotoCounts();
   }
 
   Future<void> _loadPlan() async {
@@ -541,6 +588,8 @@ class _HikeDashboardState extends State<HikeDashboard> {
                   _HikeHistory(
                     hikes: _savedHikes,
                     isLoading: _isLoadingHistory,
+                    photoCounts: _photoCounts,
+                    onOpenAlbum: _openAlbum,
                   ),
                 ]),
               ),
@@ -1753,10 +1802,17 @@ class _RecommendationMessage extends StatelessWidget {
 }
 
 class _HikeHistory extends StatelessWidget {
-  const _HikeHistory({required this.hikes, required this.isLoading});
+  const _HikeHistory({
+    required this.hikes,
+    required this.isLoading,
+    required this.photoCounts,
+    required this.onOpenAlbum,
+  });
 
   final List<SavedHike> hikes;
   final bool isLoading;
+  final Map<String, int> photoCounts;
+  final ValueChanged<SavedHike> onOpenAlbum;
 
   Future<void> _shareGpx(BuildContext context, SavedHike hike) async {
     final file = XFile.fromData(
@@ -1821,6 +1877,7 @@ class _HikeHistory extends StatelessWidget {
           ...hikes.map((hike) {
             final date = hike.startedAt;
             final durationMinutes = (hike.durationSeconds / 60).round();
+            final photoCount = photoCounts[tripKeyFor(hike.startedAt)] ?? 0;
             return Container(
               margin: const EdgeInsets.only(bottom: 9),
               decoration: BoxDecoration(
@@ -1882,6 +1939,26 @@ class _HikeHistory extends StatelessWidget {
                         color: _forest,
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: photoCount == 0
+                          ? 'Trip album'
+                          : 'Trip album · $photoCount photos',
+                      onPressed: () => onOpenAlbum(hike),
+                      icon: Badge.count(
+                        count: photoCount,
+                        isLabelVisible: photoCount > 0,
+                        backgroundColor: _forest,
+                        textStyle: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        child: const Icon(
+                          Icons.photo_library_outlined,
+                          color: _forest,
+                        ),
                       ),
                     ),
                     IconButton(
