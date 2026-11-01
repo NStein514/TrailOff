@@ -38,28 +38,47 @@ class _EmptyHistoryStore implements HikeHistoryStore {
   Future<void> save(SavedHike hike) async {}
 }
 
-class _NoOfflineMaps implements OfflineMapRepository {
-  @override
-  Future<OfflineMapRegion?> findTourRegion() async => null;
+class _RecordingOfflineMaps implements OfflineMapRepository {
+  _RecordingOfflineMaps({Map<String, bool>? savedAreas})
+    : savedAreas = savedAreas ?? {};
+
+  final Map<String, bool> savedAreas;
+  OfflineArea? lastArea;
 
   @override
-  Future<int> downloadTourRegion({
+  Future<OfflineMapRegion?> findRegion(OfflineArea area) async {
+    final complete = savedAreas[area.id];
+    if (complete == null) return null;
+    return OfflineMapRegion(id: area.id.hashCode, isComplete: complete);
+  }
+
+  @override
+  Future<int> downloadRegion({
+    required OfflineArea area,
     required void Function(double progress, int downloadedBytes) onProgress,
     required void Function() onComplete,
     required void Function(String message) onError,
-  }) async => 0;
+  }) async {
+    lastArea = area;
+    return 7;
+  }
 
   @override
   Future<void> deleteRegion(int id) async {}
 }
 
-Future<void> _pumpDashboard(WidgetTester tester, TrailPlanStore store) async {
+Future<void> _pumpDashboard(
+  WidgetTester tester,
+  TrailPlanStore store, {
+  OfflineMapRepository? offlineMaps,
+  bool offlineMapSupported = false,
+}) async {
   await tester.pumpWidget(
     TrailOffApp(
       locationSource: _IdleLocationSource(),
       historyStore: _EmptyHistoryStore(),
-      offlineMapRepository: _NoOfflineMaps(),
-      offlineMapSupported: false,
+      offlineMapRepository: offlineMaps ?? _RecordingOfflineMaps(),
+      offlineMapSupported: offlineMapSupported,
       nativeMapSupported: false,
       trailPlanStore: store,
     ),
@@ -93,8 +112,10 @@ void main() {
   testWidgets('dashboard shows the plan, refits it and clears it', (
     WidgetTester tester,
   ) async {
-    final store = _MemoryPlanStore('portillon-loop');
+    final store = _MemoryPlanStore('tour-du-portillon');
     await _pumpDashboard(tester, store);
+    expect(find.text('Lac du Portillon'), findsOneWidget);
+
     await tester.scrollUntilVisible(
       find.byKey(const Key('planned-trail')),
       250,
@@ -124,6 +145,64 @@ void main() {
     expect(store.id, isNull);
     expect(find.textContaining('No trail planned yet'), findsOneWidget);
     expect(find.text('Lac du Portillon loop'), findsNothing);
+  });
+
+  testWidgets('offline download follows the planned trail', (
+    WidgetTester tester,
+  ) async {
+    final maps = _RecordingOfflineMaps();
+    await _pumpDashboard(
+      tester,
+      _MemoryPlanStore('oo-espingo'),
+      offlineMaps: maps,
+      offlineMapSupported: true,
+    );
+
+    // The drawn fallback must not keep claiming to show the tour.
+    expect(find.text('Lac du Portillon'), findsNothing);
+    expect(find.text('Lac d’Oô & Espingo'), findsWidgets);
+
+    await tester.scrollUntilVisible(
+      find.text('Download map for offline use'),
+      250,
+    );
+    await tester.tap(find.text('Download map for offline use'));
+    await tester.pump();
+
+    expect(maps.lastArea?.id, 'oo-espingo');
+    expect(maps.lastArea?.name, 'Lac d’Oô & Espingo');
+    expect(maps.lastArea!.south, closeTo(42.678, 0.0001));
+    expect(maps.lastArea!.north, closeTo(42.778, 0.0001));
+  });
+
+  testWidgets('a saved area is recognised for the planned trail only', (
+    WidgetTester tester,
+  ) async {
+    final maps = _RecordingOfflineMaps(savedAreas: {'bois-pique': true});
+    await _pumpDashboard(
+      tester,
+      _MemoryPlanStore('bois-pique'),
+      offlineMaps: maps,
+      offlineMapSupported: true,
+    );
+
+    await tester.scrollUntilVisible(
+      find.text('Map saved · tap to remove'),
+      250,
+    );
+    expect(find.text('Map saved · tap to remove'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('planned-trail')),
+      250,
+    );
+    await tester.tap(find.byKey(const Key('clear-plan')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Download map for offline use'),
+      -250,
+    );
+    expect(find.text('Download map for offline use'), findsOneWidget);
   });
 
   testWidgets('dashboard invites a route when nothing is planned', (

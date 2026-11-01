@@ -20,7 +20,9 @@ The catalogue is sample data bundled with the app, and fit is judged only from t
 
 Open a route and choose **Plan this trail** to make it the current objective. The plan is stored on the device and shown on the dashboard as a **Your plan** card with its distance, ascent, time and fit badge. Because the badge is recalculated from the dashboard's ability and conditions, changing those settings immediately shows whether the plan still suits the day. The catalogue marks the planned route and the same sheet offers **Remove from plan**; the dashboard card can clear it too.
 
-A plan is a bookmark, not navigation: it does not move the map, change the offline map download, or guide you along the route.
+Planning also drives the map and the offline download. The dashboard map centres on the planned trailhead (the native map animates, the drawn fallback hides the tour labels and demo route so they can't be mistaken for another trail), and the map card labels the plan. The offline download button then saves an area around that trailhead and reports the saved area by name. Each trail has its own saved area, so the button shows *Map saved* only for the plan currently selected and re-checks whenever the plan changes.
+
+Two limits remain. The downloaded area is a box roughly 11 km by 11 km around the trailhead, not a trace of the route, because the catalogue has no route geometry yet. And a plan still does not navigate: nothing compares your recorded GPS track with the planned route.
 
 ## Trail answers
 

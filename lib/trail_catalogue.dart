@@ -24,6 +24,8 @@ class Trail {
     required this.highestPointMeters,
     required this.summary,
     required this.notes,
+    required this.trailheadLatitude,
+    required this.trailheadLongitude,
   });
 
   final String id;
@@ -33,6 +35,11 @@ class Trail {
   final double ascentMeters;
   final int durationMinutes;
   final int highestPointMeters;
+
+  /// Approximate trailhead, used to centre the map and choose the area to
+  /// save for offline use.
+  final double trailheadLatitude;
+  final double trailheadLongitude;
   final String summary;
   final List<String> notes;
 
@@ -127,7 +134,7 @@ String trailFitReason(TrailFit fit) => switch (fit) {
 /// Replace with downloaded catalogue data before relying on the numbers.
 const sampleTrailCatalogue = <Trail>[
   Trail(
-    id: 'portillon-loop',
+    id: 'tour-du-portillon',
     name: 'Lac du Portillon loop',
     area: 'Hospice de France',
     distanceMeters: 12400,
@@ -142,6 +149,8 @@ const sampleTrailCatalogue = <Trail>[
       'The last hour is steep and loose underfoot.',
       'Streams at two points; treat any water you take.',
     ],
+    trailheadLatitude: 42.686,
+    trailheadLongitude: 0.5546,
   ),
   Trail(
     id: 'imperatrice-falls',
@@ -159,6 +168,8 @@ const sampleTrailCatalogue = <Trail>[
       'Shaded most of the way, so it stays cooler on hot afternoons.',
       'Popular with families — expect company on summer weekends.',
     ],
+    trailheadLatitude: 42.789,
+    trailheadLongitude: 0.596,
   ),
   Trail(
     id: 'glere-refuge',
@@ -176,6 +187,8 @@ const sampleTrailCatalogue = <Trail>[
       'The refuge serves simple meals when staffed.',
       'Crosses open ground — take a shell even on a bright morning.',
     ],
+    trailheadLatitude: 42.688,
+    trailheadLongitude: 0.552,
   ),
   Trail(
     id: 'oo-espingo',
@@ -193,6 +206,8 @@ const sampleTrailCatalogue = <Trail>[
       'Swimming is cold year round and not patrolled.',
       'The hut is a good turnaround point if weather closes in.',
     ],
+    trailheadLatitude: 42.728,
+    trailheadLongitude: 0.49,
   ),
   Trail(
     id: 'pique-ridge',
@@ -210,6 +225,8 @@ const sampleTrailCatalogue = <Trail>[
       'Navigation is harder in cloud — carry the offline map.',
       'Best saved for a settled forecast and a long day.',
     ],
+    trailheadLatitude: 42.755,
+    trailheadLongitude: 0.578,
   ),
   Trail(
     id: 'bois-pique',
@@ -227,5 +244,7 @@ const sampleTrailCatalogue = <Trail>[
       'Benches along the way; no water source on the loop.',
       'A good choice when the high routes are closed.',
     ],
+    trailheadLatitude: 42.79,
+    trailheadLongitude: 0.594,
   ),
 ];

@@ -117,6 +117,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
   int _mapDownloadedBytes = 0;
   int? _offlineRegionId;
   String? _plannedTrailId;
+  bool _planLoaded = false;
   bool get _offlineMapSupported =>
       widget.offlineMapSupported ?? _isMobileTarget;
   bool get _nativeMapSupported => widget.nativeMapSupported ?? _isMobileTarget;
@@ -131,6 +132,11 @@ class _HikeDashboardState extends State<HikeDashboard> {
   Trail? get _plannedTrail =>
       plannedTrail(sampleTrailCatalogue, _plannedTrailId);
 
+  OfflineArea get _offlineArea {
+    final trail = _plannedTrail;
+    return trail == null ? defaultOfflineArea : OfflineArea.forTrail(trail);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -140,31 +146,45 @@ class _HikeDashboardState extends State<HikeDashboard> {
         widget.offlineMapRepository ?? MapLibreOfflineMapRepository();
     _planStore = widget.trailPlanStore ?? SharedPreferencesTrailPlanStore();
     _loadHistory();
-    _loadOfflineRegion();
     _loadPlan();
   }
 
   Future<void> _loadPlan() async {
+    String? id;
     try {
-      final id = await _planStore.loadPlannedTrailId();
-      if (!mounted) return;
-      setState(() => _plannedTrailId = id);
+      id = await _planStore.loadPlannedTrailId();
     } catch (_) {
       if (!mounted) return;
       _showMessage('Your planned trail could not be loaded.');
+      return;
     }
+    if (!mounted) return;
+    final changed = !_planLoaded || id != _plannedTrailId;
+    setState(() {
+      _planLoaded = true;
+      _plannedTrailId = id;
+      if (changed) {
+        _offlineRegionId = null;
+        _mapSaved = false;
+        _mapDownloading = false;
+        _mapDownloadProgress = 0;
+        _mapDownloadedBytes = 0;
+      }
+    });
+    if (changed) await _loadOfflineRegion();
   }
 
   Future<void> _clearPlan() async {
     try {
       await _planStore.clear();
-      if (!mounted) return;
-      setState(() => _plannedTrailId = null);
-      _showMessage('Planned trail cleared.');
     } catch (_) {
       if (!mounted) return;
       _showMessage('The planned trail could not be cleared.');
+      return;
     }
+    if (!mounted) return;
+    _showMessage('Planned trail cleared.');
+    await _loadPlan();
   }
 
   Future<void> _openCatalogue() async {
@@ -183,12 +203,13 @@ class _HikeDashboardState extends State<HikeDashboard> {
 
   Future<void> _loadOfflineRegion() async {
     if (!_offlineMapSupported) return;
+    final area = _offlineArea;
     try {
-      final region = await _offlineMapRepository.findTourRegion();
-      if (!mounted || region == null) return;
+      final region = await _offlineMapRepository.findRegion(area);
+      if (!mounted || area.id != _offlineArea.id) return;
       setState(() {
-        _offlineRegionId = region.id;
-        _mapSaved = region.isComplete;
+        _offlineRegionId = region?.id;
+        _mapSaved = region?.isComplete ?? false;
       });
     } catch (_) {
       // Keep the online map available if the native offline store is unavailable.
@@ -202,35 +223,37 @@ class _HikeDashboardState extends State<HikeDashboard> {
       );
       return;
     }
+    final area = _offlineArea;
     setState(() {
       _mapDownloading = true;
       _mapDownloadProgress = 0;
       _mapDownloadedBytes = 0;
     });
     try {
-      final regionId = await _offlineMapRepository.downloadTourRegion(
+      final regionId = await _offlineMapRepository.downloadRegion(
+        area: area,
         onProgress: (progress, bytes) {
-          if (!mounted) return;
+          if (!mounted || area.id != _offlineArea.id) return;
           setState(() {
             _mapDownloadProgress = progress.clamp(0.0, 1.0);
             _mapDownloadedBytes = bytes;
           });
         },
         onComplete: () {
-          if (!mounted) return;
+          if (!mounted || area.id != _offlineArea.id) return;
           setState(() {
             _mapDownloading = false;
             _mapSaved = true;
           });
-          _showMessage('Tour du Portillon is ready for offline use.');
+          _showMessage('${area.name} is ready for offline use.');
         },
         onError: (message) {
-          if (!mounted) return;
+          if (!mounted || area.id != _offlineArea.id) return;
           setState(() => _mapDownloading = false);
           _showMessage('Map download failed: $message');
         },
       );
-      if (!mounted) return;
+      if (!mounted || area.id != _offlineArea.id) return;
       setState(() => _offlineRegionId = regionId);
     } catch (error) {
       if (!mounted) return;
@@ -433,6 +456,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
                     points: _recordedPoints,
                     isRecording: _isRecording,
                     showNativeMap: _nativeMapSupported,
+                    trail: _plannedTrail,
                   ),
                   _OfflineMapButton(
                     saved: _mapSaved,
@@ -558,14 +582,22 @@ class _TrailMap extends StatelessWidget {
     required this.points,
     required this.isRecording,
     required this.showNativeMap,
+    required this.trail,
   });
 
   final List<HikePoint> points;
   final bool isRecording;
   final bool showNativeMap;
+  final Trail? trail;
 
   @override
   Widget build(BuildContext context) {
+    final planned = trail;
+    // The drawn labels and demo route describe the tour, so they are hidden
+    // once a different trail is planned.
+    final tour = planned == null || planned.id == defaultOfflineArea.id;
+    final centerLatitude = planned?.trailheadLatitude ?? 42.695;
+    final centerLongitude = planned?.trailheadLongitude ?? 0.515;
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
       child: SizedBox(
@@ -574,10 +606,18 @@ class _TrailMap extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (showNativeMap)
-              _NativeTrailMap(points: List.unmodifiable(points))
+              _NativeTrailMap(
+                points: List.unmodifiable(points),
+                centerLatitude: centerLatitude,
+                centerLongitude: centerLongitude,
+                showDemoRoute: tour,
+              )
             else
               CustomPaint(
-                painter: _TopoMapPainter(points: List.unmodifiable(points)),
+                painter: _TopoMapPainter(
+                  points: List.unmodifiable(points),
+                  showDemoRoute: tour,
+                ),
               ),
             if (isRecording)
               Positioned(
@@ -616,59 +656,96 @@ class _TrailMap extends StatelessWidget {
                   ),
                 ),
               ),
-            const Positioned(
-              left: 20,
-              top: 92,
-              child: _MapLabel('2,650 m', size: 11),
-            ),
-            const Positioned(
-              left: 42,
-              bottom: 112,
-              child: _MapLabel('de Montarqué', size: 11),
-            ),
-            const Positioned(
-              right: 49,
-              top: 153,
-              child: _MapLabel('Refuge du Portillon', size: 11),
-            ),
-            Positioned(
-              right: 30,
-              bottom: 51,
-              child: Transform.rotate(
-                angle: -0.22,
-                child: const Text(
-                  'Lac du Portillon',
-                  style: TextStyle(
-                    color: Color(0xFF27799D),
-                    fontSize: 14,
-                    fontStyle: FontStyle.italic,
-                    letterSpacing: 0.5,
+            if (planned != null)
+              Positioned(
+                left: 14,
+                top: 14,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.flag_rounded, color: _forest, size: 14),
+                      const SizedBox(width: 5),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 180),
+                        child: Text(
+                          planned.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _ink,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
-            const Positioned(
-              left: 25,
-              top: 125,
-              child: _MapPin(color: _forest, icon: Icons.terrain_rounded),
-            ),
-            const Positioned(
-              right: 38,
-              top: 91,
-              child: _MapPin(
-                color: Color(0xFFF2A83B),
-                icon: Icons.home_rounded,
+            if (tour) ...[
+              const Positioned(
+                left: 20,
+                top: 92,
+                child: _MapLabel('2,650 m', size: 11),
               ),
-            ),
-            const Positioned(
-              right: 27,
-              top: 20,
-              child: _MapPin(
-                color: Color(0xFF62B8E4),
-                icon: Icons.water_rounded,
-                small: true,
+              const Positioned(
+                left: 42,
+                bottom: 112,
+                child: _MapLabel('de Montarqué', size: 11),
               ),
-            ),
+              const Positioned(
+                right: 49,
+                top: 153,
+                child: _MapLabel('Refuge du Portillon', size: 11),
+              ),
+              Positioned(
+                right: 30,
+                bottom: 51,
+                child: Transform.rotate(
+                  angle: -0.22,
+                  child: const Text(
+                    'Lac du Portillon',
+                    style: TextStyle(
+                      color: Color(0xFF27799D),
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+              const Positioned(
+                left: 25,
+                top: 125,
+                child: _MapPin(color: _forest, icon: Icons.terrain_rounded),
+              ),
+              const Positioned(
+                right: 38,
+                top: 91,
+                child: _MapPin(
+                  color: Color(0xFFF2A83B),
+                  icon: Icons.home_rounded,
+                ),
+              ),
+              const Positioned(
+                right: 27,
+                top: 20,
+                child: _MapPin(
+                  color: Color(0xFF62B8E4),
+                  icon: Icons.water_rounded,
+                  small: true,
+                ),
+              ),
+            ],
             Positioned(
               left: MediaQuery.sizeOf(context).width * 0.43,
               top: 177,
@@ -767,9 +844,10 @@ class _MapPin extends StatelessWidget {
 }
 
 class _TopoMapPainter extends CustomPainter {
-  const _TopoMapPainter({required this.points});
+  const _TopoMapPainter({required this.points, required this.showDemoRoute});
 
   final List<HikePoint> points;
+  final bool showDemoRoute;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -897,7 +975,7 @@ class _TopoMapPainter extends CustomPainter {
       canvas.drawPath(path, road);
     }
 
-    if (points.isEmpty) {
+    if (points.isEmpty && showDemoRoute) {
       final route = Path()
         ..moveTo(size.width * 0.02, size.height * 0.37)
         ..cubicTo(
@@ -999,13 +1077,22 @@ class _TopoMapPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TopoMapPainter oldDelegate) =>
-      oldDelegate.points != points;
+      oldDelegate.points != points ||
+      oldDelegate.showDemoRoute != showDemoRoute;
 }
 
 class _NativeTrailMap extends StatefulWidget {
-  const _NativeTrailMap({required this.points});
+  const _NativeTrailMap({
+    required this.points,
+    required this.centerLatitude,
+    required this.centerLongitude,
+    required this.showDemoRoute,
+  });
 
   final List<HikePoint> points;
+  final double centerLatitude;
+  final double centerLongitude;
+  final bool showDemoRoute;
 
   @override
   State<_NativeTrailMap> createState() => _NativeTrailMapState();
@@ -1018,8 +1105,8 @@ class _NativeTrailMapState extends State<_NativeTrailMap> {
 
   @override
   Widget build(BuildContext context) => maplibre.MapLibreMap(
-    initialCameraPosition: const maplibre.CameraPosition(
-      target: maplibre.LatLng(42.695, 0.515),
+    initialCameraPosition: maplibre.CameraPosition(
+      target: maplibre.LatLng(widget.centerLatitude, widget.centerLongitude),
       zoom: 12,
     ),
     styleString: tourOfflineMapStyle,
@@ -1042,9 +1129,25 @@ class _NativeTrailMapState extends State<_NativeTrailMap> {
   @override
   void didUpdateWidget(covariant _NativeTrailMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_styleLoaded && oldWidget.points != widget.points) {
+    if (oldWidget.centerLatitude != widget.centerLatitude ||
+        oldWidget.centerLongitude != widget.centerLongitude) {
+      _recenter();
+    }
+    if (_styleLoaded &&
+        (oldWidget.points != widget.points ||
+            oldWidget.showDemoRoute != widget.showDemoRoute)) {
       _updateTrailLine();
     }
+  }
+
+  Future<void> _recenter() async {
+    final controller = _controller;
+    if (controller == null) return;
+    await controller.animateCamera(
+      maplibre.CameraUpdate.newLatLng(
+        maplibre.LatLng(widget.centerLatitude, widget.centerLongitude),
+      ),
+    );
   }
 
   Future<void> _updateTrailLine() async {
@@ -1052,6 +1155,8 @@ class _NativeTrailMapState extends State<_NativeTrailMap> {
     if (controller == null || !_styleLoaded) return;
     final previousLine = _trailLine;
     if (previousLine != null) await controller.removeLine(previousLine);
+    _trailLine = null;
+    if (widget.points.isEmpty && !widget.showDemoRoute) return;
     final geometry = widget.points.isEmpty
         ? const [
             maplibre.LatLng(42.686, 0.486),

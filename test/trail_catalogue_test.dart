@@ -23,7 +23,7 @@ Trail _trail(String id) =>
 
 void main() {
   test('fit compares distance and ascent with ability and conditions', () {
-    final loop = _trail('portillon-loop');
+    final loop = _trail('tour-du-portillon');
     final forest = _trail('bois-pique');
     final falls = _trail('imperatrice-falls');
 
@@ -122,10 +122,10 @@ void main() {
     expect(badgeIn('bois-pique', 'Fits today'), findsOneWidget);
 
     await tester.scrollUntilVisible(
-      find.byKey(const Key('trail-portillon-loop')),
+      find.byKey(const Key('trail-tour-du-portillon')),
       240,
     );
-    expect(badgeIn('portillon-loop', 'Too demanding today'), findsOneWidget);
+    expect(badgeIn('tour-du-portillon', 'Too demanding today'), findsOneWidget);
 
     await tester.scrollUntilVisible(
       find.byKey(const Key('catalogue-ability')),
@@ -141,11 +141,11 @@ void main() {
       findsOneWidget,
     );
     await tester.scrollUntilVisible(
-      find.byKey(const Key('trail-portillon-loop')),
+      find.byKey(const Key('trail-tour-du-portillon')),
       240,
     );
-    expect(badgeIn('portillon-loop', 'Fits today'), findsOneWidget);
-    expect(badgeIn('portillon-loop', 'Too demanding today'), findsNothing);
+    expect(badgeIn('tour-du-portillon', 'Fits today'), findsOneWidget);
+    expect(badgeIn('tour-du-portillon', 'Too demanding today'), findsNothing);
   });
 
   testWidgets('a trail can be planned and removed from the sheet', (
@@ -203,12 +203,12 @@ void main() {
     expect(find.text('GOOD TO KNOW'), findsNothing);
 
     await tester.scrollUntilVisible(
-      find.byKey(const Key('trail-portillon-loop')),
+      find.byKey(const Key('trail-tour-du-portillon')),
       240,
     );
-    await tester.ensureVisible(find.byKey(const Key('trail-portillon-loop')));
+    await tester.ensureVisible(find.byKey(const Key('trail-tour-du-portillon')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('trail-portillon-loop')));
+    await tester.tap(find.byKey(const Key('trail-tour-du-portillon')));
     await tester.pumpAndSettle();
     expect(find.text('GOOD TO KNOW'), findsOneWidget);
     expect(find.text('Lac du Portillon loop'), findsNWidgets(2));

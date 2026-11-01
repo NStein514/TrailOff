@@ -176,6 +176,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Map saved · tap to remove'), findsOneWidget);
     expect(offlineMaps.lastCreatedRegionId, 27);
+    expect(offlineMaps.lastRequestedArea?.id, 'tour-du-portillon');
 
     await tester.tap(find.text('Map saved · tap to remove'));
     await tester.pump();
@@ -271,20 +272,23 @@ class _FakeLocationSource implements HikeLocationSource {
 class _FakeOfflineMapRepository implements OfflineMapRepository {
   void Function(double progress, int downloadedBytes)? _onProgress;
   void Function()? _onComplete;
+  OfflineArea? lastRequestedArea;
   int? lastCreatedRegionId;
   final deletedRegionIds = <int>[];
 
   @override
-  Future<OfflineMapRegion?> findTourRegion() async => null;
+  Future<OfflineMapRegion?> findRegion(OfflineArea area) async => null;
 
   @override
-  Future<int> downloadTourRegion({
+  Future<int> downloadRegion({
+    required OfflineArea area,
     required void Function(double progress, int downloadedBytes) onProgress,
     required void Function() onComplete,
     required void Function(String message) onError,
   }) async {
     _onProgress = onProgress;
     _onComplete = onComplete;
+    lastRequestedArea = area;
     lastCreatedRegionId = 27;
     return 27;
   }
