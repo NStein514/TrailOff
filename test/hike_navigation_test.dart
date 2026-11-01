@@ -170,6 +170,48 @@ void main() {
     expect(restored.distanceMeters, 8000);
   });
 
+  testWidgets('warns when the live track leaves the planned route', (
+    WidgetTester tester,
+  ) async {
+    final locationSource = _FakeLocationSource();
+    await tester.pumpWidget(
+      TrailOffApp(
+        locationSource: locationSource,
+        historyStore: _MemoryHistoryStore(),
+        offlineMapRepository: _NoOfflineMaps(),
+        offlineMapSupported: false,
+        nativeMapSupported: false,
+        trailPlanStore: _MemoryPlanStore('bois-pique'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    addTearDown(locationSource.close);
+
+    await tester.scrollUntilVisible(find.text('Record a hike'), 250);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Record a hike'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Record a hike'));
+    await tester.pump();
+    expect(find.byKey(const Key('off-route-warning')), findsNothing);
+
+    // Kilometres away from the Bois de la Pique circuit.
+    locationSource.add(_point(42.80, 0.61));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('off-route-warning')));
+    expect(find.byKey(const Key('off-route-warning')), findsOneWidget);
+    expect(find.text('OFF THE PLANNED ROUTE'), findsOneWidget);
+    expect(
+      find.textContaining('from the line. Head back towards it.'),
+      findsOneWidget,
+    );
+
+    // Standing on a vertex of the route again clears the warning.
+    locationSource.add(_point(42.7922, 0.5962));
+    await tester.pump();
+    expect(find.byKey(const Key('off-route-warning')), findsNothing);
+  });
+
   testWidgets('recording follows the plan and history keeps the trail', (
     WidgetTester tester,
   ) async {

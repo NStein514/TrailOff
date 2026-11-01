@@ -1,6 +1,6 @@
 # TrailOff
 
-TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue with route geometry, plan-aware recording, on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a plan-aware packing checklist, offline trail answers, and a Constellation sky view.
+TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue with route geometry, plan-aware recording with off-route warnings, on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a plan-aware packing checklist, offline trail answers, and a Constellation sky view.
 
 ## Product scope
 
@@ -29,6 +29,8 @@ Limits: the route geometry is sample data written for demonstration. It starts a
 ## Recording on a planned trail
 
 While a plan is active, the live hike card gains a **Back to _trail_ trailhead** row: the straight-line distance and a compass bearing from the latest GPS fix back to the trailhead, with an arrow that rotates to that bearing and a plain *You are at the trailhead* once you are within 30 m. It is a heading and a distance, not a route: it ignores terrain, cliffs and where the path actually goes, so it is for orientation only.
+
+Recording also watches where you are relative to the planned line. Once the latest fix is more than 200 m from the nearest point of the route, the card shows an off-route warning with that distance rounded to the nearest 10 m. The warning only clears once you are back within 120 m, so GPS noise at the boundary cannot flicker it. Distances are straight-line and measured against the drawn sample geometry, so they describe how far you are from the line on the map and nothing more — it cannot see cliffs, rivers or private land between you and that line, and it is not a safety system.
 
 Saving a hike records which trail it was planned for. **Past adventures** then lists the trail under the date, and the shared GPX track is named after it. Hikes saved before planning existed still load and simply have no trail.
 

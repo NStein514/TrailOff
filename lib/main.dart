@@ -13,6 +13,7 @@ import 'constellation.dart';
 import 'offline_map.dart';
 import 'packing_checklist.dart';
 import 'route_recommendations.dart';
+import 'route_tracking.dart';
 import 'trail_answers.dart';
 import 'trail_catalogue.dart';
 import 'trail_catalogue_page.dart';
@@ -121,6 +122,10 @@ class _HikeDashboardState extends State<HikeDashboard> {
   int? _offlineRegionId;
   String? _plannedTrailId;
   bool _planLoaded = false;
+
+  /// Distance from the planned line when the hiker is off route, otherwise
+  /// null. Kept with hysteresis so the warning does not flicker.
+  double? _offRouteMeters;
   bool get _offlineMapSupported =>
       widget.offlineMapSupported ?? _isMobileTarget;
   bool get _nativeMapSupported => widget.nativeMapSupported ?? _isMobileTarget;
@@ -167,6 +172,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
       _planLoaded = true;
       _plannedTrailId = id;
       if (changed) {
+        _offRouteMeters = null;
         _offlineRegionId = null;
         _mapSaved = false;
         _mapDownloading = false;
@@ -324,6 +330,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
         _startedAt = startedAt;
         _isRecording = true;
         _hasRecordedSession = true;
+        _offRouteMeters = null;
       });
       _locationSubscription = _locationSource.positions.listen(
         _onLocation,
@@ -352,6 +359,21 @@ class _HikeDashboardState extends State<HikeDashboard> {
         : distanceBetweenPoints(previous, point);
     if (previous != null && segment < 3) return;
 
+    final trail = _plannedTrail;
+    final match = trail == null
+        ? null
+        : matchRoute(
+            route: trail.route,
+            latitude: point.latitude,
+            longitude: point.longitude,
+          );
+    final offRoute = match == null
+        ? null
+        : offRouteDistanceAfter(
+            distanceMeters: match.distanceMeters,
+            previous: _offRouteMeters,
+          );
+
     setState(() {
       if (previous != null) _distanceMeters += segment;
       if (previous != null) {
@@ -360,6 +382,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
       }
       _recordedPoints.add(point);
       _latestPoint = point;
+      _offRouteMeters = offRoute;
     });
   }
 
@@ -377,6 +400,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
     setState(() {
       _isRecording = false;
       _elapsedSeconds = finishedAt.difference(startedAt).inSeconds;
+      _offRouteMeters = null;
     });
     if (locationSubscription != null) unawaited(locationSubscription.cancel());
 
@@ -485,6 +509,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
                     latestPoint: _latestPoint,
                     points: _recordedPoints,
                     trail: _plannedTrail,
+                    offRouteMeters: _offRouteMeters,
                   ),
                   const SizedBox(height: 12),
                   _PlannedTrail(
@@ -1900,6 +1925,7 @@ class _HikeSummary extends StatelessWidget {
     required this.latestPoint,
     required this.points,
     this.trail,
+    this.offRouteMeters,
   });
 
   final VoidCallback onRecordPressed;
@@ -1911,6 +1937,9 @@ class _HikeSummary extends StatelessWidget {
   final HikePoint? latestPoint;
   final List<HikePoint> points;
   final Trail? trail;
+
+  /// How far the latest fix is from the planned line while off route.
+  final double? offRouteMeters;
 
   String get _duration {
     final minutes = elapsedSeconds ~/ 60;
@@ -1996,6 +2025,10 @@ class _HikeSummary extends StatelessWidget {
               ),
             ],
           ),
+          if (offRouteMeters != null) ...[
+            const SizedBox(height: 10),
+            _OffRouteWarning(distanceMeters: offRouteMeters!),
+          ],
           if (plannedTrail != null && (isRecording || latestPoint != null)) ...[
             const SizedBox(height: 10),
             _TrailheadReturn(trail: plannedTrail, latestPoint: latestPoint),
@@ -2045,6 +2078,61 @@ class _HikeSummary extends StatelessWidget {
                   borderRadius: BorderRadius.circular(15),
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OffRouteWarning extends StatelessWidget {
+  const _OffRouteWarning({required this.distanceMeters});
+
+  final double distanceMeters;
+
+  @override
+  Widget build(BuildContext context) {
+    // Rounded to 10 m so the figure does not jitter with every GPS fix.
+    final rounded = (distanceMeters / 10).round() * 10;
+    return Container(
+      key: const Key('off-route-warning'),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFCEDE8),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: const Color(0xFFEBC3B7)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.wrong_location_rounded,
+            color: Color(0xFFB5483E),
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'OFF THE PLANNED ROUTE',
+                  style: TextStyle(
+                    color: Color(0xFF8E3A31),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'About $rounded m from the line. Head back towards it.',
+                  style: const TextStyle(
+                    color: Color(0xFF6E3A32),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
