@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'route_recommendations.dart';
 import 'trail_catalogue.dart';
+import 'trail_fit_badge.dart';
+import 'trail_plan.dart';
 
 const _forest = Color(0xFF3E8967);
 const _ink = Color(0xFF292D2B);
@@ -13,11 +15,13 @@ class TrailCataloguePage extends StatefulWidget {
     this.ability = HikingAbility.beginner,
     this.conditions = TrailConditions.dry,
     this.trails = sampleTrailCatalogue,
+    this.planStore,
   });
 
   final HikingAbility ability;
   final TrailConditions conditions;
   final List<Trail> trails;
+  final TrailPlanStore? planStore;
 
   @override
   State<TrailCataloguePage> createState() => _TrailCataloguePageState();
@@ -26,6 +30,34 @@ class TrailCataloguePage extends StatefulWidget {
 class _TrailCataloguePageState extends State<TrailCataloguePage> {
   late HikingAbility _ability = widget.ability;
   late TrailConditions _conditions = widget.conditions;
+  late final TrailPlanStore _planStore;
+  String? _plannedTrailId;
+
+  @override
+  void initState() {
+    super.initState();
+    _planStore = widget.planStore ?? SharedPreferencesTrailPlanStore();
+    _loadPlan();
+  }
+
+  Future<void> _loadPlan() async {
+    try {
+      final id = await _planStore.loadPlannedTrailId();
+      if (!mounted) return;
+      setState(() => _plannedTrailId = id);
+    } catch (_) {
+      // Having no saved plan is a valid state; saving reports real failures.
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+      );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -143,6 +175,7 @@ class _TrailCataloguePageState extends State<TrailCataloguePage> {
           for (final suggestion in suggestions)
             _TrailTile(
               suggestion: suggestion,
+              planned: suggestion.trail.id == _plannedTrailId,
               onTap: () => _showDetails(suggestion),
             ),
           const SizedBox(height: 4),
@@ -157,8 +190,9 @@ class _TrailCataloguePageState extends State<TrailCataloguePage> {
     );
   }
 
-  void _showDetails(TrailSuggestion suggestion) {
-    showModalBottomSheet<void>(
+  Future<void> _showDetails(TrailSuggestion suggestion) async {
+    final planned = suggestion.trail.id == _plannedTrailId;
+    final action = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: const Color(0xFFFAFBF9),
       isScrollControlled: true,
@@ -168,16 +202,40 @@ class _TrailCataloguePageState extends State<TrailCataloguePage> {
       builder: (context) => _TrailDetails(
         suggestion: suggestion,
         conditions: _conditions,
+        planned: planned,
         onClose: () => Navigator.of(context).pop(),
       ),
     );
+    if (!mounted || action == null) return;
+    try {
+      if (action) {
+        await _planStore.plan(suggestion.trail.id);
+      } else {
+        await _planStore.clear();
+      }
+      if (!mounted) return;
+      setState(() => _plannedTrailId = action ? suggestion.trail.id : null);
+      _showMessage(
+        action
+            ? '${suggestion.trail.name} is now your planned trail.'
+            : 'Planned trail cleared.',
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage('Your plan could not be saved on this device.');
+    }
   }
 }
 
 class _TrailTile extends StatelessWidget {
-  const _TrailTile({required this.suggestion, required this.onTap});
+  const _TrailTile({
+    required this.suggestion,
+    required this.planned,
+    required this.onTap,
+  });
 
   final TrailSuggestion suggestion;
+  final bool planned;
   final VoidCallback onTap;
 
   @override
@@ -234,7 +292,7 @@ class _TrailTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    _FitBadge(fit: suggestion.fit),
+                    TrailFitBadge(fit: suggestion.fit),
                   ],
                 ),
                 const SizedBox(height: 9),
@@ -256,46 +314,21 @@ class _TrailTile extends StatelessWidget {
                     height: 1.35,
                   ),
                 ),
+                if (planned) ...[
+                  const SizedBox(height: 7),
+                  const Text(
+                    'PLANNED ROUTE',
+                    style: TextStyle(
+                      color: _forest,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FitBadge extends StatelessWidget {
-  const _FitBadge({required this.fit});
-
-  final TrailFit fit;
-
-  @override
-  Widget build(BuildContext context) {
-    final (background, foreground) = switch (fit) {
-      TrailFit.comfortable => (
-        const Color(0xFFE7F3EC),
-        const Color(0xFF2F7154),
-      ),
-      TrailFit.stretch => (const Color(0xFFFBF1DF), const Color(0xFF8A5D1F)),
-      TrailFit.tooDemanding => (
-        const Color(0xFFF8EAE7),
-        const Color(0xFF95493D),
-      ),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        fit.label,
-        style: TextStyle(
-          color: foreground,
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.2,
         ),
       ),
     );
@@ -306,11 +339,13 @@ class _TrailDetails extends StatelessWidget {
   const _TrailDetails({
     required this.suggestion,
     required this.conditions,
+    required this.planned,
     required this.onClose,
   });
 
   final TrailSuggestion suggestion;
   final TrailConditions conditions;
+  final bool planned;
   final VoidCallback onClose;
 
   @override
@@ -349,7 +384,7 @@ class _TrailDetails extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                _FitBadge(fit: suggestion.fit),
+                TrailFitBadge(fit: suggestion.fit),
               ],
             ),
             const SizedBox(height: 3),
@@ -444,7 +479,29 @@ class _TrailDetails extends StatelessWidget {
               'on the day.',
               style: const TextStyle(color: Color(0xFF858B86), fontSize: 10),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: planned
+                  ? OutlinedButton.icon(
+                      key: const Key('unplan-trail'),
+                      onPressed: () => Navigator.of(context).pop(false),
+                      icon: const Icon(Icons.flag_outlined, size: 18),
+                      label: const Text('Remove from plan'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _forest,
+                        side: const BorderSide(color: Color(0xFFCADCD1)),
+                      ),
+                    )
+                  : FilledButton.icon(
+                      key: const Key('plan-trail'),
+                      onPressed: () => Navigator.of(context).pop(true),
+                      icon: const Icon(Icons.flag_rounded, size: 18),
+                      label: const Text('Plan this trail'),
+                      style: FilledButton.styleFrom(backgroundColor: _forest),
+                    ),
+            ),
+            const SizedBox(height: 2),
             SizedBox(
               width: double.infinity,
               child: TextButton(

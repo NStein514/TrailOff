@@ -16,6 +16,12 @@ Open **Discover trails** from the dashboard to browse the region's routes. Each 
 
 The catalogue is sample data bundled with the app, and fit is judged only from the hiker's own settings. It does not know about closures, permissions, or the weather on the day.
 
+## Planning a trail
+
+Open a route and choose **Plan this trail** to make it the current objective. The plan is stored on the device and shown on the dashboard as a **Your plan** card with its distance, ascent, time and fit badge. Because the badge is recalculated from the dashboard's ability and conditions, changing those settings immediately shows whether the plan still suits the day. The catalogue marks the planned route and the same sheet offers **Remove from plan**; the dashboard card can clear it too.
+
+A plan is a bookmark, not navigation: it does not move the map, change the offline map download, or guide you along the route.
+
 ## Trail answers
 
 Download a region's trail guide, then ask questions about it with no signal. Answers are produced on device by matching the question against the downloaded sections and quoting the section that covers it, so every reply names its source (`From Tour du Portillon · Water & refills`). Questions that mention anything the guide does not discuss are refused instead of answered, and the app lists the topics the guide actually covers.

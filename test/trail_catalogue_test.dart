@@ -3,6 +3,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:trailoff/route_recommendations.dart';
 import 'package:trailoff/trail_catalogue.dart';
 import 'package:trailoff/trail_catalogue_page.dart';
+import 'package:trailoff/trail_plan.dart';
+
+class _MemoryPlanStore implements TrailPlanStore {
+  String? id;
+
+  @override
+  Future<String?> loadPlannedTrailId() async => id;
+
+  @override
+  Future<void> plan(String trailId) async => id = trailId;
+
+  @override
+  Future<void> clear() async => id = null;
+}
 
 Trail _trail(String id) =>
     sampleTrailCatalogue.firstWhere((trail) => trail.id == id);
@@ -132,6 +146,37 @@ void main() {
     );
     expect(badgeIn('portillon-loop', 'Fits today'), findsOneWidget);
     expect(badgeIn('portillon-loop', 'Too demanding today'), findsNothing);
+  });
+
+  testWidgets('a trail can be planned and removed from the sheet', (
+    WidgetTester tester,
+  ) async {
+    final store = _MemoryPlanStore();
+    await tester.pumpWidget(
+      MaterialApp(home: TrailCataloguePage(planStore: store)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('trail-bois-pique')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('plan-trail')));
+    await tester.pumpAndSettle();
+
+    expect(store.id, 'bois-pique');
+    expect(find.text('PLANNED ROUTE'), findsOneWidget);
+    expect(
+      find.text('Bois de la Pique circuit is now your planned trail.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('trail-bois-pique')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('unplan-trail')));
+    await tester.pumpAndSettle();
+
+    expect(store.id, isNull);
+    expect(find.text('PLANNED ROUTE'), findsNothing);
+    expect(find.text('Planned trail cleared.'), findsOneWidget);
   });
 
   testWidgets('trail details explain the fit and show route notes', (

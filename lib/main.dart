@@ -12,8 +12,11 @@ import 'offline_map.dart';
 import 'packing_checklist.dart';
 import 'route_recommendations.dart';
 import 'trail_answers.dart';
+import 'trail_catalogue.dart';
 import 'trail_catalogue_page.dart';
+import 'trail_fit_badge.dart';
 import 'trail_guide.dart';
+import 'trail_plan.dart';
 
 void main() {
   runApp(const TrailOffApp());
@@ -32,6 +35,7 @@ class TrailOffApp extends StatelessWidget {
     this.offlineMapSupported,
     this.nativeMapSupported,
     this.trailGuideStore,
+    this.trailPlanStore,
   });
 
   final HikeLocationSource? locationSource;
@@ -40,6 +44,7 @@ class TrailOffApp extends StatelessWidget {
   final bool? offlineMapSupported;
   final bool? nativeMapSupported;
   final TrailGuideStore? trailGuideStore;
+  final TrailPlanStore? trailPlanStore;
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +64,7 @@ class TrailOffApp extends StatelessWidget {
         offlineMapSupported: offlineMapSupported,
         nativeMapSupported: nativeMapSupported,
         trailGuideStore: trailGuideStore,
+        trailPlanStore: trailPlanStore,
       ),
     );
   }
@@ -73,6 +79,7 @@ class HikeDashboard extends StatefulWidget {
     this.offlineMapSupported,
     this.nativeMapSupported,
     this.trailGuideStore,
+    this.trailPlanStore,
   });
 
   final HikeLocationSource? locationSource;
@@ -81,6 +88,7 @@ class HikeDashboard extends StatefulWidget {
   final bool? offlineMapSupported;
   final bool? nativeMapSupported;
   final TrailGuideStore? trailGuideStore;
+  final TrailPlanStore? trailPlanStore;
 
   @override
   State<HikeDashboard> createState() => _HikeDashboardState();
@@ -108,6 +116,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
   double _mapDownloadProgress = 0;
   int _mapDownloadedBytes = 0;
   int? _offlineRegionId;
+  String? _plannedTrailId;
   bool get _offlineMapSupported =>
       widget.offlineMapSupported ?? _isMobileTarget;
   bool get _nativeMapSupported => widget.nativeMapSupported ?? _isMobileTarget;
@@ -117,6 +126,10 @@ class _HikeDashboardState extends State<HikeDashboard> {
           defaultTargetPlatform == TargetPlatform.iOS);
 
   late final OfflineMapRepository _offlineMapRepository;
+  late final TrailPlanStore _planStore;
+
+  Trail? get _plannedTrail =>
+      plannedTrail(sampleTrailCatalogue, _plannedTrailId);
 
   @override
   void initState() {
@@ -125,8 +138,47 @@ class _HikeDashboardState extends State<HikeDashboard> {
     _historyStore = widget.historyStore ?? SharedPreferencesHikeHistoryStore();
     _offlineMapRepository =
         widget.offlineMapRepository ?? MapLibreOfflineMapRepository();
+    _planStore = widget.trailPlanStore ?? SharedPreferencesTrailPlanStore();
     _loadHistory();
     _loadOfflineRegion();
+    _loadPlan();
+  }
+
+  Future<void> _loadPlan() async {
+    try {
+      final id = await _planStore.loadPlannedTrailId();
+      if (!mounted) return;
+      setState(() => _plannedTrailId = id);
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage('Your planned trail could not be loaded.');
+    }
+  }
+
+  Future<void> _clearPlan() async {
+    try {
+      await _planStore.clear();
+      if (!mounted) return;
+      setState(() => _plannedTrailId = null);
+      _showMessage('Planned trail cleared.');
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage('The planned trail could not be cleared.');
+    }
+  }
+
+  Future<void> _openCatalogue() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TrailCataloguePage(
+          ability: _hikingAbility,
+          conditions: _trailConditions,
+          planStore: widget.trailPlanStore,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    _loadPlan();
   }
 
   Future<void> _loadOfflineRegion() async {
@@ -350,14 +402,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
                         TextButton.icon(
                           icon: const Icon(Icons.travel_explore, size: 18),
                           label: const Text('Discover trails'),
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => TrailCataloguePage(
-                                ability: _hikingAbility,
-                                conditions: _trailConditions,
-                              ),
-                            ),
-                          ),
+                          onPressed: _openCatalogue,
                         ),
                         TextButton.icon(
                           icon: const Icon(Icons.auto_awesome, size: 18),
@@ -409,6 +454,14 @@ class _HikeDashboardState extends State<HikeDashboard> {
                     elevationGainMeters: _elevationGainMeters,
                     latestPoint: _latestPoint,
                     points: _recordedPoints,
+                  ),
+                  const SizedBox(height: 12),
+                  _PlannedTrail(
+                    trail: _plannedTrail,
+                    ability: _hikingAbility,
+                    conditions: _trailConditions,
+                    onBrowse: _openCatalogue,
+                    onClear: _clearPlan,
                   ),
                   const SizedBox(height: 20),
                   _RouteAdvisor(
@@ -1135,6 +1188,145 @@ class _OfflineMapButton extends StatelessWidget {
                   ),
                 ),
         ),
+      ),
+    );
+  }
+}
+
+class _PlannedTrail extends StatelessWidget {
+  const _PlannedTrail({
+    required this.trail,
+    required this.ability,
+    required this.conditions,
+    required this.onBrowse,
+    required this.onClear,
+  });
+
+  final Trail? trail;
+  final HikingAbility ability;
+  final TrailConditions conditions;
+  final VoidCallback onBrowse;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final planned = trail;
+    return Container(
+      key: const Key('planned-trail'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFBF9),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0B24352C),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.flag_rounded, color: _forest, size: 19),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Your plan',
+                  style: TextStyle(
+                    color: _ink,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 17,
+                  ),
+                ),
+              ),
+              TextButton(
+                key: const Key('browse-trails'),
+                onPressed: onBrowse,
+                style: TextButton.styleFrom(
+                  foregroundColor: _forest,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: Text(planned == null ? 'Find a route' : 'Change'),
+              ),
+            ],
+          ),
+          if (planned == null)
+            const Text(
+              'No trail planned yet. Pick a route from the catalogue and its '
+              'fit stays here as your conditions change.',
+              style: TextStyle(
+                color: Color(0xFF68716B),
+                fontSize: 12,
+                height: 1.35,
+              ),
+            )
+          else ...[
+            Text(
+              planned.name,
+              style: const TextStyle(
+                color: _ink,
+                fontFamily: 'Georgia',
+                fontSize: 19,
+                fontWeight: FontWeight.w700,
+                height: 1.2,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              planned.area,
+              style: const TextStyle(color: Color(0xFF777E79), fontSize: 11),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              '${planned.distanceLabel} · ${planned.ascentLabel} ascent · '
+              '${planned.durationLabel}',
+              style: const TextStyle(
+                color: Color(0xFF5F6862),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                TrailFitBadge(
+                  fit: trailFit(
+                    trail: planned,
+                    ability: ability,
+                    conditions: conditions,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${ability.label} · '
+                    '${conditions.label.toLowerCase()} conditions',
+                    style: const TextStyle(
+                      color: Color(0xFF858B86),
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  key: const Key('clear-plan'),
+                  onPressed: onClear,
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF777E79),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 32),
+                  ),
+                  child: const Text(
+                    'Clear plan',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }
