@@ -1,13 +1,20 @@
 # TrailOff
 
-TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a condition-aware packing checklist, offline trail answers, and a Constellation sky view.
+TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue, on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a condition-aware packing checklist, offline trail answers, and a Constellation sky view.
 
 ## Product scope
 
+- Discover trails and match them to the hiker. *(Implemented: sample catalogue with ability and condition fit.)*
 - Recommend routes based on hiker ability and trail conditions. *(Implemented: ranks saved hikes against ability and conditions.)*
 - Generate practical packing checklists for the selected route and conditions. *(Implemented.)*
 - Answer questions grounded in downloaded trail information. *(Implemented: offline retrieval that quotes a downloaded guide section.)*
 - Support outdoor activities beyond hiking, including camping. *(Constellation sky view implemented.)*
+
+## Trail discovery
+
+Open **Discover trails** from the dashboard to browse the region's routes. Each card shows distance, ascent, time and a fit badge: *Fits today*, *A stretch*, or *Too demanding today*. Fit is the larger of distance and ascent measured against the selected ability's limits, reduced by the selected conditions. Changing ability or conditions re-sorts the list and updates every badge. Tapping a route opens details with the fit reasoning and route-specific notes.
+
+The catalogue is sample data bundled with the app, and fit is judged only from the hiker's own settings. It does not know about closures, permissions, or the weather on the day.
 
 ## Trail answers
 

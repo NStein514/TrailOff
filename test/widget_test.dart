@@ -102,6 +102,9 @@ void main() {
     await tester.pumpAndSettle();
     addTearDown(locationSource.close);
 
+    expect(find.text('Discover trails'), findsOneWidget);
+    expect(find.text('Constellation'), findsOneWidget);
+
     await tester.tap(find.text('Constellation'));
     await tester.pumpAndSettle();
     expect(find.text('Your campsite sky'), findsOneWidget);

@@ -12,6 +12,7 @@ import 'offline_map.dart';
 import 'packing_checklist.dart';
 import 'route_recommendations.dart';
 import 'trail_answers.dart';
+import 'trail_catalogue_page.dart';
 import 'trail_guide.dart';
 
 void main() {
@@ -343,14 +344,31 @@ class _HikeDashboardState extends State<HikeDashboard> {
                   const _Wordmark(),
                   Align(
                     alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      icon: const Icon(Icons.auto_awesome),
-                      label: const Text('Constellation'),
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const ConstellationPage(),
+                    child: Wrap(
+                      alignment: WrapAlignment.end,
+                      children: [
+                        TextButton.icon(
+                          icon: const Icon(Icons.travel_explore, size: 18),
+                          label: const Text('Discover trails'),
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => TrailCataloguePage(
+                                ability: _hikingAbility,
+                                conditions: _trailConditions,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        TextButton.icon(
+                          icon: const Icon(Icons.auto_awesome, size: 18),
+                          label: const Text('Constellation'),
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const ConstellationPage(),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 22),
