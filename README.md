@@ -1,6 +1,6 @@
 # TrailOff
 
-TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue, plan-aware recording, on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a plan-aware packing checklist, offline trail answers, and a Constellation sky view.
+TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue with route geometry, plan-aware recording, on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a plan-aware packing checklist, offline trail answers, and a Constellation sky view.
 
 ## Product scope
 
@@ -20,9 +20,11 @@ The catalogue is sample data bundled with the app, and fit is judged only from t
 
 Open a route and choose **Plan this trail** to make it the current objective. The plan is stored on the device and shown on the dashboard as a **Your plan** card with its distance, ascent, time and fit badge. Because the badge is recalculated from the dashboard's ability and conditions, changing those settings immediately shows whether the plan still suits the day. The catalogue marks the planned route and the same sheet offers **Remove from plan**; the dashboard card can clear it too.
 
-Planning also drives the map and the offline download. The dashboard map centres on the planned trailhead (the native map animates, the drawn fallback hides the tour labels and demo route so they can't be mistaken for another trail), and the map card labels the plan. The offline download button then saves an area around that trailhead and reports the saved area by name. Each trail has its own saved area, so the button shows *Map saved* only for the plan currently selected and re-checks whenever the plan changes.
+Planning also drives the map and the offline download. Each catalogue trail carries a route line, so the dashboard map frames and draws the planned route — as a MapLibre line on device, and as a painted trail with a trailhead marker in the no-device fallback, where the tour labels and demo route are hidden so they can't be mistaken for another trail. The map card labels the plan. The record tab's live track is projected in the same frame as the planned line, so you can see how far your walk sits from it.
 
-Two limits remain. The downloaded area is a box roughly 11 km by 11 km around the trailhead, not a trace of the route, because the catalogue has no route geometry yet. And a plan still does not navigate the route itself: the live hike card measures distance and bearing back to the trailhead, but nothing compares your recorded track with the planned line.
+The offline download saves the planned route's bounding box widened by 1.5 km on every side, so the saved tiles cover the line the map draws, and reports the saved area by name. Each trail has its own saved area, so the button shows *Map saved* only for the plan currently selected and re-checks whenever the plan changes.
+
+Limits: the route geometry is sample data written for demonstration. It starts and closes at each trailhead and stays within one valley, but it is not a surveyed track and is shorter than the curated distance printed beside it, which remains the authoritative figure. The saved area is the route's bounding box, not a corridor buffered along the line, so a wide loop still downloads its empty interior. And a plan still does not navigate: the live hike card measures distance and bearing back to the trailhead, but nothing gives turn-by-turn directions along the route.
 
 ## Recording on a planned trail
 

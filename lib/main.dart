@@ -17,6 +17,7 @@ import 'trail_answers.dart';
 import 'trail_catalogue.dart';
 import 'trail_catalogue_page.dart';
 import 'trail_fit_badge.dart';
+import 'trail_geometry.dart';
 import 'trail_guide.dart';
 import 'trail_plan.dart';
 
@@ -603,8 +604,12 @@ class _TrailMap extends StatelessWidget {
     // The drawn labels and demo route describe the tour, so they are hidden
     // once a different trail is planned.
     final tour = planned == null || planned.id == defaultOfflineArea.id;
-    final centerLatitude = planned?.trailheadLatitude ?? 42.695;
-    final centerLongitude = planned?.trailheadLongitude ?? 0.515;
+    final route = planned?.route ?? const <TrailPoint>[];
+    final bounds = route.isEmpty ? null : trailBounds(route);
+    final centerLatitude =
+        bounds?.centerLatitude ?? planned?.trailheadLatitude ?? 42.695;
+    final centerLongitude =
+        bounds?.centerLongitude ?? planned?.trailheadLongitude ?? 0.515;
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
       child: SizedBox(
@@ -617,12 +622,14 @@ class _TrailMap extends StatelessWidget {
                 points: List.unmodifiable(points),
                 centerLatitude: centerLatitude,
                 centerLongitude: centerLongitude,
+                route: route,
                 showDemoRoute: tour,
               )
             else
               CustomPaint(
                 painter: _TopoMapPainter(
                   points: List.unmodifiable(points),
+                  route: route,
                   showDemoRoute: tour,
                 ),
               ),
@@ -851,9 +858,14 @@ class _MapPin extends StatelessWidget {
 }
 
 class _TopoMapPainter extends CustomPainter {
-  const _TopoMapPainter({required this.points, required this.showDemoRoute});
+  const _TopoMapPainter({
+    required this.points,
+    required this.route,
+    required this.showDemoRoute,
+  });
 
   final List<HikePoint> points;
+  final List<TrailPoint> route;
   final bool showDemoRoute;
 
   @override
@@ -982,7 +994,7 @@ class _TopoMapPainter extends CustomPainter {
       canvas.drawPath(path, road);
     }
 
-    if (points.isEmpty && showDemoRoute) {
+    if (points.isEmpty && route.isEmpty && showDemoRoute) {
       final route = Path()
         ..moveTo(size.width * 0.02, size.height * 0.37)
         ..cubicTo(
@@ -1027,64 +1039,101 @@ class _TopoMapPainter extends CustomPainter {
       );
     }
 
-    if (points.length > 1) {
-      final minLatitude = points
-          .map((point) => point.latitude)
-          .reduce((a, b) => a < b ? a : b);
-      final maxLatitude = points
-          .map((point) => point.latitude)
-          .reduce((a, b) => a > b ? a : b);
-      final minLongitude = points
-          .map((point) => point.longitude)
-          .reduce((a, b) => a < b ? a : b);
-      final maxLongitude = points
-          .map((point) => point.longitude)
-          .reduce((a, b) => a > b ? a : b);
+    // The planned route and the live track share one projection, so a GPS track
+    // sits in the same frame as the line it was meant to follow.
+    final latitudes = [
+      ...route.map((point) => point.latitude),
+      ...points.map((point) => point.latitude),
+    ];
+    final longitudes = [
+      ...route.map((point) => point.longitude),
+      ...points.map((point) => point.longitude),
+    ];
+    if (latitudes.isNotEmpty) {
+      final minLatitude = latitudes.reduce((a, b) => a < b ? a : b);
+      final maxLatitude = latitudes.reduce((a, b) => a > b ? a : b);
+      final minLongitude = longitudes.reduce((a, b) => a < b ? a : b);
+      final maxLongitude = longitudes.reduce((a, b) => a > b ? a : b);
       final latitudeRange = maxLatitude - minLatitude;
       final longitudeRange = maxLongitude - minLongitude;
-      Offset mapPoint(HikePoint point) => Offset(
+      Offset mapOffset(double latitude, double longitude) => Offset(
         size.width *
-            (0.15 +
-                0.7 *
+            (0.12 +
+                0.76 *
                     (longitudeRange == 0
                         ? 0.5
-                        : (point.longitude - minLongitude) / longitudeRange)),
+                        : (longitude - minLongitude) / longitudeRange)),
         size.height *
-            (0.15 +
-                0.7 *
+            (0.12 +
+                0.76 *
                     (latitudeRange == 0
                         ? 0.5
-                        : 1 - (point.latitude - minLatitude) / latitudeRange)),
+                        : 1 - (latitude - minLatitude) / latitudeRange)),
       );
-      final track = Path();
-      for (var i = 0; i < points.length; i++) {
-        final point = mapPoint(points[i]);
-        final x = point.dx;
-        final y = point.dy;
-        if (i == 0) {
-          track.moveTo(x, y);
-        } else {
-          track.lineTo(x, y);
+
+      if (route.length > 1) {
+        final routePath = Path();
+        for (var i = 0; i < route.length; i++) {
+          final offset = mapOffset(route[i].latitude, route[i].longitude);
+          if (i == 0) {
+            routePath.moveTo(offset.dx, offset.dy);
+          } else {
+            routePath.lineTo(offset.dx, offset.dy);
+          }
         }
+        canvas.drawPath(
+          routePath,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 9
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round
+            ..color = Colors.white.withValues(alpha: 0.86),
+        );
+        canvas.drawPath(
+          routePath,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 5
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round
+            ..color = const Color(0xFFC66D39),
+        );
+        final start = mapOffset(route.first.latitude, route.first.longitude);
+        canvas.drawCircle(start, 7, Paint()..color = Colors.white);
+        canvas.drawCircle(start, 4.5, Paint()..color = const Color(0xFF2F5D45));
       }
-      canvas.drawPath(
-        track,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 4
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..color = const Color(0xFF0878F9),
-      );
-      final current = mapPoint(points.last);
-      canvas.drawCircle(current, 7, Paint()..color = Colors.white);
-      canvas.drawCircle(current, 4, Paint()..color = const Color(0xFF0878F9));
+
+      if (points.length > 1) {
+        final track = Path();
+        for (var i = 0; i < points.length; i++) {
+          final offset = mapOffset(points[i].latitude, points[i].longitude);
+          if (i == 0) {
+            track.moveTo(offset.dx, offset.dy);
+          } else {
+            track.lineTo(offset.dx, offset.dy);
+          }
+        }
+        canvas.drawPath(
+          track,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 4
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round
+            ..color = const Color(0xFF0878F9),
+        );
+        final current = mapOffset(points.last.latitude, points.last.longitude);
+        canvas.drawCircle(current, 7, Paint()..color = Colors.white);
+        canvas.drawCircle(current, 4, Paint()..color = const Color(0xFF0878F9));
+      }
     }
   }
 
   @override
   bool shouldRepaint(covariant _TopoMapPainter oldDelegate) =>
       oldDelegate.points != points ||
+      oldDelegate.route != route ||
       oldDelegate.showDemoRoute != showDemoRoute;
 }
 
@@ -1093,12 +1142,14 @@ class _NativeTrailMap extends StatefulWidget {
     required this.points,
     required this.centerLatitude,
     required this.centerLongitude,
+    required this.route,
     required this.showDemoRoute,
   });
 
   final List<HikePoint> points;
   final double centerLatitude;
   final double centerLongitude;
+  final List<TrailPoint> route;
   final bool showDemoRoute;
 
   @override
@@ -1114,7 +1165,7 @@ class _NativeTrailMapState extends State<_NativeTrailMap> {
   Widget build(BuildContext context) => maplibre.MapLibreMap(
     initialCameraPosition: maplibre.CameraPosition(
       target: maplibre.LatLng(widget.centerLatitude, widget.centerLongitude),
-      zoom: 12,
+      zoom: _fitZoom(),
     ),
     styleString: tourOfflineMapStyle,
     compassEnabled: true,
@@ -1140,19 +1191,35 @@ class _NativeTrailMapState extends State<_NativeTrailMap> {
         oldWidget.centerLongitude != widget.centerLongitude) {
       _recenter();
     }
+    if (oldWidget.route != widget.route) {
+      _recenter();
+    }
     if (_styleLoaded &&
         (oldWidget.points != widget.points ||
+            oldWidget.route != widget.route ||
             oldWidget.showDemoRoute != widget.showDemoRoute)) {
       _updateTrailLine();
     }
+  }
+
+  /// Each degree of a route needs roughly `320 / span` pixels, which is a zoom
+  /// of log2 over the world width of 256 px per level.
+  double _fitZoom() {
+    if (widget.route.length < 2) return 12;
+    final bounds = trailBounds(widget.route);
+    final span = math.max(bounds.latitudeSpan, bounds.longitudeSpan);
+    if (span <= 0) return 13;
+    final zoom = math.log(360 * 320 / (256 * span)) / math.ln2;
+    return zoom.clamp(9.0, 15.0);
   }
 
   Future<void> _recenter() async {
     final controller = _controller;
     if (controller == null) return;
     await controller.animateCamera(
-      maplibre.CameraUpdate.newLatLng(
+      maplibre.CameraUpdate.newLatLngZoom(
         maplibre.LatLng(widget.centerLatitude, widget.centerLongitude),
+        _fitZoom(),
       ),
     );
   }
@@ -1163,18 +1230,27 @@ class _NativeTrailMapState extends State<_NativeTrailMap> {
     final previousLine = _trailLine;
     if (previousLine != null) await controller.removeLine(previousLine);
     _trailLine = null;
-    if (widget.points.isEmpty && !widget.showDemoRoute) return;
-    final geometry = widget.points.isEmpty
-        ? const [
-            maplibre.LatLng(42.686, 0.486),
-            maplibre.LatLng(42.691, 0.497),
-            maplibre.LatLng(42.688, 0.506),
-            maplibre.LatLng(42.699, 0.512),
-            maplibre.LatLng(42.703, 0.526),
-          ]
-        : widget.points
-              .map((point) => maplibre.LatLng(point.latitude, point.longitude))
-              .toList();
+    final route = widget.route;
+    final List<maplibre.LatLng> geometry;
+    if (widget.points.isNotEmpty) {
+      geometry = widget.points
+          .map((point) => maplibre.LatLng(point.latitude, point.longitude))
+          .toList();
+    } else if (route.length > 1) {
+      geometry = route
+          .map((point) => maplibre.LatLng(point.latitude, point.longitude))
+          .toList();
+    } else if (widget.showDemoRoute) {
+      geometry = const [
+        maplibre.LatLng(42.686, 0.486),
+        maplibre.LatLng(42.691, 0.497),
+        maplibre.LatLng(42.688, 0.506),
+        maplibre.LatLng(42.699, 0.512),
+        maplibre.LatLng(42.703, 0.526),
+      ];
+    } else {
+      return;
+    }
     _trailLine = await controller.addLine(
       maplibre.LineOptions(
         geometry: geometry,

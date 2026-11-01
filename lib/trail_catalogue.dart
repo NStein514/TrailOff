@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'route_recommendations.dart';
+import 'trail_geometry.dart';
 
 /// How a catalogue route compares with the hiker's ability on a given day.
 enum TrailFit {
@@ -26,6 +27,7 @@ class Trail {
     required this.notes,
     required this.trailheadLatitude,
     required this.trailheadLongitude,
+    required this.route,
   });
 
   final String id;
@@ -40,6 +42,11 @@ class Trail {
   /// save for offline use.
   final double trailheadLatitude;
   final double trailheadLongitude;
+
+  /// Sample geometry for drawing the route and sizing offline downloads. The
+  /// distance and ascent figures above are the curated ones; this line is
+  /// indicative and must be replaced with real track data.
+  final List<TrailPoint> route;
   final String summary;
   final List<String> notes;
 
@@ -151,6 +158,18 @@ const sampleTrailCatalogue = <Trail>[
     ],
     trailheadLatitude: 42.686,
     trailheadLongitude: 0.5546,
+    route: [
+      TrailPoint(42.686, 0.5546),
+      TrailPoint(42.6905, 0.5602),
+      TrailPoint(42.6938, 0.5645),
+      TrailPoint(42.6975, 0.5610),
+      TrailPoint(42.7005, 0.5570),
+      TrailPoint(42.6990, 0.5525),
+      TrailPoint(42.6960, 0.5498),
+      TrailPoint(42.6910, 0.5460),
+      TrailPoint(42.6872, 0.5502),
+      TrailPoint(42.686, 0.5546),
+    ],
   ),
   Trail(
     id: 'imperatrice-falls',
@@ -170,6 +189,16 @@ const sampleTrailCatalogue = <Trail>[
     ],
     trailheadLatitude: 42.789,
     trailheadLongitude: 0.596,
+    route: [
+      TrailPoint(42.789, 0.596),
+      TrailPoint(42.7912, 0.5985),
+      TrailPoint(42.7935, 0.5975),
+      TrailPoint(42.7958, 0.5995),
+      TrailPoint(42.7972, 0.6018),
+      TrailPoint(42.7958, 0.5995),
+      TrailPoint(42.7912, 0.5985),
+      TrailPoint(42.789, 0.596),
+    ],
   ),
   Trail(
     id: 'glere-refuge',
@@ -189,6 +218,17 @@ const sampleTrailCatalogue = <Trail>[
     ],
     trailheadLatitude: 42.688,
     trailheadLongitude: 0.552,
+    route: [
+      TrailPoint(42.688, 0.552),
+      TrailPoint(42.6905, 0.5485),
+      TrailPoint(42.6932, 0.5455),
+      TrailPoint(42.6960, 0.5435),
+      TrailPoint(42.6990, 0.5448),
+      TrailPoint(42.7002, 0.5478),
+      TrailPoint(42.6968, 0.5502),
+      TrailPoint(42.6925, 0.5525),
+      TrailPoint(42.688, 0.552),
+    ],
   ),
   Trail(
     id: 'oo-espingo',
@@ -208,6 +248,18 @@ const sampleTrailCatalogue = <Trail>[
     ],
     trailheadLatitude: 42.728,
     trailheadLongitude: 0.49,
+    route: [
+      TrailPoint(42.728, 0.49),
+      TrailPoint(42.7315, 0.4935),
+      TrailPoint(42.7345, 0.4960),
+      TrailPoint(42.7375, 0.4990),
+      TrailPoint(42.7395, 0.5025),
+      TrailPoint(42.7410, 0.5060),
+      TrailPoint(42.7380, 0.5035),
+      TrailPoint(42.7350, 0.5000),
+      TrailPoint(42.7310, 0.4960),
+      TrailPoint(42.728, 0.49),
+    ],
   ),
   Trail(
     id: 'pique-ridge',
@@ -227,6 +279,18 @@ const sampleTrailCatalogue = <Trail>[
     ],
     trailheadLatitude: 42.755,
     trailheadLongitude: 0.578,
+    route: [
+      TrailPoint(42.755, 0.578),
+      TrailPoint(42.7585, 0.5740),
+      TrailPoint(42.7610, 0.5700),
+      TrailPoint(42.7640, 0.5665),
+      TrailPoint(42.7675, 0.5625),
+      TrailPoint(42.7705, 0.5585),
+      TrailPoint(42.7660, 0.5560),
+      TrailPoint(42.7620, 0.5590),
+      TrailPoint(42.7575, 0.5650),
+      TrailPoint(42.755, 0.578),
+    ],
   ),
   Trail(
     id: 'bois-pique',
@@ -246,5 +310,14 @@ const sampleTrailCatalogue = <Trail>[
     ],
     trailheadLatitude: 42.79,
     trailheadLongitude: 0.594,
+    route: [
+      TrailPoint(42.79, 0.594),
+      TrailPoint(42.7922, 0.5962),
+      TrailPoint(42.7938, 0.5990),
+      TrailPoint(42.7920, 0.6012),
+      TrailPoint(42.7898, 0.5998),
+      TrailPoint(42.7890, 0.5968),
+      TrailPoint(42.79, 0.594),
+    ],
   ),
 ];

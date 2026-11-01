@@ -1,6 +1,7 @@
 import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
 
 import 'trail_catalogue.dart';
+import 'trail_geometry.dart';
 
 const tourOfflineMapStyle = maplibre.MapLibreStyles.openfreemapLiberty;
 
@@ -16,20 +17,24 @@ class OfflineArea {
     required this.east,
   });
 
-  /// A box around the trailhead, roughly 11 km tall by 11 km wide. The catalogue
-  /// has no route geometry yet, so this is an area around the start rather than
-  /// a per-route trace.
-  factory OfflineArea.forTrail(Trail trail) => OfflineArea(
-    id: trail.id,
-    name: trail.name,
-    south: trail.trailheadLatitude - _latitudeSpan,
-    north: trail.trailheadLatitude + _latitudeSpan,
-    west: trail.trailheadLongitude - _longitudeSpan,
-    east: trail.trailheadLongitude + _longitudeSpan,
-  );
+  /// The route's bounding box plus a 1.5 km margin, so a download covers the
+  /// line the map draws rather than a box around the start. Long routes still
+  /// produce a rectangle: this is not a corridor buffered around the track.
+  factory OfflineArea.forTrail(Trail trail) {
+    final bounds = trailBounds(
+      trail.route,
+    ).expandedByMeters(_routeMarginMeters);
+    return OfflineArea(
+      id: trail.id,
+      name: trail.name,
+      south: bounds.south,
+      north: bounds.north,
+      west: bounds.west,
+      east: bounds.east,
+    );
+  }
 
-  static const _latitudeSpan = 0.05;
-  static const _longitudeSpan = 0.065;
+  static const _routeMarginMeters = 1500.0;
 
   final String id;
   final String name;

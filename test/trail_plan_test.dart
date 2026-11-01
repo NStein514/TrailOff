@@ -5,6 +5,7 @@ import 'package:trailoff/hike_recording.dart';
 import 'package:trailoff/main.dart';
 import 'package:trailoff/offline_map.dart';
 import 'package:trailoff/trail_catalogue.dart';
+import 'package:trailoff/trail_geometry.dart';
 import 'package:trailoff/trail_plan.dart';
 
 class _MemoryPlanStore implements TrailPlanStore {
@@ -171,8 +172,14 @@ void main() {
 
     expect(maps.lastArea?.id, 'oo-espingo');
     expect(maps.lastArea?.name, 'Lac d’Oô & Espingo');
-    expect(maps.lastArea!.south, closeTo(42.678, 0.0001));
-    expect(maps.lastArea!.north, closeTo(42.778, 0.0001));
+    final route = sampleTrailCatalogue
+        .firstWhere((trail) => trail.id == 'oo-espingo')
+        .route;
+    final bounds = trailBounds(route);
+    expect(maps.lastArea!.south, lessThan(bounds.south));
+    expect(maps.lastArea!.north, greaterThan(bounds.north));
+    expect(maps.lastArea!.west, lessThan(bounds.west));
+    expect(maps.lastArea!.east, greaterThan(bounds.east));
   });
 
   testWidgets('a saved area is recognised for the planned trail only', (
