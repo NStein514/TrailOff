@@ -91,7 +91,21 @@ class _FixedHistoryStore implements HikeHistoryStore {
   Future<List<SavedHike>> load() async => List.unmodifiable(hikes);
 
   @override
-  Future<void> save(SavedHike hike) async {}
+  Future<void> save(SavedHike hike) async => hikes.insert(0, hike);
+}
+
+class _StreamLocationSource implements HikeLocationSource {
+  final _controller = StreamController<HikePoint>.broadcast(sync: true);
+
+  @override
+  Future<void> prepare() async {}
+
+  @override
+  Stream<HikePoint> get positions => _controller.stream;
+
+  void add(HikePoint point) => _controller.add(point);
+
+  Future<void> close() => _controller.close();
 }
 
 class _NoOfflineMaps implements OfflineMapRepository {
@@ -278,6 +292,95 @@ void main() {
 
     expect(store.photos, isEmpty);
     expect(find.text('No photos in this album yet'), findsOneWidget);
+  });
+
+  testWidgets('a photo taken mid-hike lands in the saved trip album', (
+    WidgetTester tester,
+  ) async {
+    final locationSource = _StreamLocationSource();
+    final history = _FixedHistoryStore([]);
+    final store = _MemoryPhotoStore();
+    final photoPath = (await tester.runAsync(() => writePng('midhike')))!;
+
+    await tester.pumpWidget(
+      TrailOffApp(
+        locationSource: locationSource,
+        historyStore: history,
+        offlineMapRepository: _NoOfflineMaps(),
+        offlineMapSupported: false,
+        nativeMapSupported: false,
+        trailPlanStore: _MemoryPlanStore(),
+        tripPhotoStore: store,
+        tripPhotoPicker: _FakePicker(photoPath),
+      ),
+    );
+    await tester.pumpAndSettle();
+    addTearDown(locationSource.close);
+
+    await tester.scrollUntilVisible(find.text('Record a hike'), 250);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Record a hike'));
+    await tester.pump();
+
+    await tester.ensureVisible(find.byKey(const Key('take-hike-photo')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('take-hike-photo')));
+    await tester.pumpAndSettle();
+
+    expect(store.photos, hasLength(1));
+    expect(find.text('Take a photo · 1 kept'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Finish hike'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Finish hike'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    // No GPS arrived, but the photo keeps the trip alive and reachable.
+    expect(history.hikes, hasLength(1));
+    expect(history.hikes.single.points, isEmpty);
+    expect(
+      store.photos.single.tripKey,
+      tripKeyFor(history.hikes.single.startedAt),
+    );
+    expect(find.textContaining('saved with its photos only'), findsOneWidget);
+  });
+
+  testWidgets('a hike with no GPS and no photos is still not saved', (
+    WidgetTester tester,
+  ) async {
+    final locationSource = _StreamLocationSource();
+    final history = _FixedHistoryStore([]);
+
+    await tester.pumpWidget(
+      TrailOffApp(
+        locationSource: locationSource,
+        historyStore: history,
+        offlineMapRepository: _NoOfflineMaps(),
+        offlineMapSupported: false,
+        nativeMapSupported: false,
+        trailPlanStore: _MemoryPlanStore(),
+        tripPhotoStore: _MemoryPhotoStore(),
+        tripPhotoPicker: _FakePicker('unused.png'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    addTearDown(locationSource.close);
+
+    await tester.scrollUntilVisible(find.text('Record a hike'), 250);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Record a hike'));
+    await tester.pump();
+    await tester.ensureVisible(find.text('Finish hike'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Finish hike'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(history.hikes, isEmpty);
+    expect(find.textContaining('so this hike was not saved'), findsOneWidget);
   });
 
   testWidgets('a saved trip opens its album from the history list', (

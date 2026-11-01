@@ -36,11 +36,13 @@ Saving a hike records which trail it was planned for. **Past adventures** then l
 
 ## Trip photo albums
 
-Every saved adventure has an album. In **Past adventures**, tap the photo button on a trip row — it carries a count badge once photos exist — to open that trip's album. From there **Take photo** opens the system camera and the gallery action adds an existing picture from the library. Photos are copied into the app's private documents folder, with their trip association kept alongside the hike's start time, so albums survive restarts without an account, a network call, or access to the device's shared gallery.
+Every saved adventure has an album. While a hike is being recorded, the live card offers **Take a photo**, which captures straight into the trip in progress — the photo is keyed to the same start time the saved hike will use, so it is waiting in the album as soon as you finish. If GPS never produces a point but photos were taken, the trip is still saved, with its photos and no track, so the album stays reachable instead of orphaned.
+
+In **Past adventures**, tap the photo button on a trip row — it carries a count badge once photos exist — to open that trip's album. From there **Take photo** opens the system camera and the gallery action adds an existing picture from the library. Photos are copied into the app's private documents folder, with their trip association kept alongside the hike's start time, so albums survive restarts without an account, a network call, or access to the device's shared gallery.
 
 Photos appear as a two-column grid; tapping one opens it full screen (pinch to zoom) with its capture time, and deleting it asks for confirmation first and removes the file from the device. Photos are stored at a maximum of 2000 px and 85% quality.
 
-Limits: photos can only be added once a hike is saved, not while it is being recorded. There is no backup, sync or export — photos live in app storage and are lost if the app is uninstalled — and GPX export does not include them. EXIF location and camera metadata are not read or displayed, and the album does not know where a photo was taken.
+Limits: a photo taken before the hike starts recording is not attached to it, and photos are not geotagged by the app. There is no backup, sync or export — photos live in app storage and are lost if the app is uninstalled — and GPX export does not include them. EXIF location and camera metadata are not read or displayed, and the album does not know where a photo was taken.
 
 ## Packing for the plan
 

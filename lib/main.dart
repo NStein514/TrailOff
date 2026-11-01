@@ -149,6 +149,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
   late final OfflineMapRepository _offlineMapRepository;
   late final TrailPlanStore _planStore;
   late final TripPhotoStore _photoStore;
+  late final TripPhotoPicker _photoPicker;
 
   /// Photo totals per saved trip, keyed like the stored photos.
   Map<String, int> _photoCounts = const {};
@@ -170,6 +171,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
         widget.offlineMapRepository ?? MapLibreOfflineMapRepository();
     _planStore = widget.trailPlanStore ?? SharedPreferencesTrailPlanStore();
     _photoStore = widget.tripPhotoStore ?? FileTripPhotoStore();
+    _photoPicker = widget.tripPhotoPicker ?? ImagePickerTripPhotoPicker();
     _loadHistory();
     _loadPlan();
     _loadPhotoCounts();
@@ -188,6 +190,33 @@ class _HikeDashboardState extends State<HikeDashboard> {
     }
     if (!mounted) return;
     setState(() => _photoCounts = counts);
+  }
+
+  /// Captures a photo into the trip currently being recorded. The trip key is
+  /// the session's start time, which is exactly the key the saved hike will
+  /// use, so the photo appears in its album as soon as the hike is saved.
+  Future<void> _takeHikePhoto() async {
+    final startedAt = _startedAt;
+    if (startedAt == null) return;
+    final trail = _plannedTrail;
+    try {
+      final picked = await _photoPicker.pick(TripPhotoSource.camera);
+      if (picked == null) return;
+      await _photoStore.add(
+        tripKey: tripKeyFor(startedAt),
+        photo: picked,
+        trailId: trail?.id,
+        trailName: trail?.name,
+      );
+      await _loadPhotoCounts();
+      if (!mounted) return;
+      _showMessage('Photo saved with this hike.');
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage(
+        'The photo could not be taken. Check camera access and try again.',
+      );
+    }
   }
 
   Future<void> _openAlbum(SavedHike hike) async {
@@ -451,7 +480,8 @@ class _HikeDashboardState extends State<HikeDashboard> {
     });
     if (locationSubscription != null) unawaited(locationSubscription.cancel());
 
-    if (recordedPoints.isEmpty) {
+    final sessionPhotoCount = _photoCounts[tripKeyFor(startedAt)] ?? 0;
+    if (recordedPoints.isEmpty && sessionPhotoCount == 0) {
       _showMessage('No GPS points were received, so this hike was not saved.');
       return;
     }
@@ -470,7 +500,11 @@ class _HikeDashboardState extends State<HikeDashboard> {
       await _historyStore.save(hike);
       if (!mounted) return;
       setState(() => _savedHikes = [hike, ..._savedHikes]);
-      _showMessage('Hike saved with ${hike.points.length} GPS points.');
+      _showMessage(
+        recordedPoints.isEmpty
+            ? 'No GPS points were received, so this hike was saved with its photos only.'
+            : 'Hike saved with ${hike.points.length} GPS points.',
+      );
     } catch (_) {
       _showMessage('This hike could not be saved on your device.');
     }
@@ -557,6 +591,10 @@ class _HikeDashboardState extends State<HikeDashboard> {
                     points: _recordedPoints,
                     trail: _plannedTrail,
                     offRouteMeters: _offRouteMeters,
+                    photoCount: _startedAt == null
+                        ? 0
+                        : (_photoCounts[tripKeyFor(_startedAt!)] ?? 0),
+                    onTakePhoto: _takeHikePhoto,
                   ),
                   const SizedBox(height: 12),
                   _PlannedTrail(
@@ -2001,6 +2039,8 @@ class _HikeSummary extends StatelessWidget {
     required this.elevationGainMeters,
     required this.latestPoint,
     required this.points,
+    required this.photoCount,
+    required this.onTakePhoto,
     this.trail,
     this.offRouteMeters,
   });
@@ -2017,6 +2057,10 @@ class _HikeSummary extends StatelessWidget {
 
   /// How far the latest fix is from the planned line while off route.
   final double? offRouteMeters;
+
+  /// Photos already captured into the trip being recorded.
+  final int photoCount;
+  final VoidCallback onTakePhoto;
 
   String get _duration {
     final minutes = elapsedSeconds ~/ 60;
@@ -2157,6 +2201,34 @@ class _HikeSummary extends StatelessWidget {
               ),
             ),
           ),
+          if (isRecording) ...[
+            const SizedBox(height: 9),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: OutlinedButton.icon(
+                key: const Key('take-hike-photo'),
+                onPressed: onTakePhoto,
+                icon: const Icon(Icons.photo_camera_rounded, size: 17),
+                label: Text(
+                  photoCount == 0
+                      ? 'Take a photo'
+                      : 'Take a photo · $photoCount kept',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _forest,
+                  side: const BorderSide(color: Color(0x553E8967)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
