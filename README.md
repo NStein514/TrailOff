@@ -1,6 +1,6 @@
 # TrailOff
 
-TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue, on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a condition-aware packing checklist, offline trail answers, and a Constellation sky view.
+TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue, plan-aware recording, on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a condition-aware packing checklist, offline trail answers, and a Constellation sky view.
 
 ## Product scope
 
@@ -22,7 +22,13 @@ Open a route and choose **Plan this trail** to make it the current objective. Th
 
 Planning also drives the map and the offline download. The dashboard map centres on the planned trailhead (the native map animates, the drawn fallback hides the tour labels and demo route so they can't be mistaken for another trail), and the map card labels the plan. The offline download button then saves an area around that trailhead and reports the saved area by name. Each trail has its own saved area, so the button shows *Map saved* only for the plan currently selected and re-checks whenever the plan changes.
 
-Two limits remain. The downloaded area is a box roughly 11 km by 11 km around the trailhead, not a trace of the route, because the catalogue has no route geometry yet. And a plan still does not navigate: nothing compares your recorded GPS track with the planned route.
+Two limits remain. The downloaded area is a box roughly 11 km by 11 km around the trailhead, not a trace of the route, because the catalogue has no route geometry yet. And a plan still does not navigate the route itself: the live hike card measures distance and bearing back to the trailhead, but nothing compares your recorded track with the planned line.
+
+## Recording on a planned trail
+
+While a plan is active, the live hike card gains a **Back to _trail_ trailhead** row: the straight-line distance and a compass bearing from the latest GPS fix back to the trailhead, with an arrow that rotates to that bearing and a plain *You are at the trailhead* once you are within 30 m. It is a heading and a distance, not a route: it ignores terrain, cliffs and where the path actually goes, so it is for orientation only.
+
+Saving a hike records which trail it was planned for. **Past adventures** then lists the trail under the date, and the shared GPX track is named after it. Hikes saved before planning existed still load and simply have no trail.
 
 ## Trail answers
 

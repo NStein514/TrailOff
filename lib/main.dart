@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
 import 'package:share_plus/share_plus.dart';
 
+import 'hike_navigation.dart';
 import 'hike_recording.dart';
 import 'constellation.dart';
 import 'offline_map.dart';
@@ -365,6 +367,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
     if (!_isRecording || startedAt == null) return;
     final finishedAt = DateTime.now();
     final recordedPoints = List<HikePoint>.unmodifiable(_recordedPoints);
+    final trail = _plannedTrail;
     final distanceMeters = _distanceMeters;
     final elevationGainMeters = _elevationGainMeters;
     _elapsedTimer?.cancel();
@@ -388,6 +391,8 @@ class _HikeDashboardState extends State<HikeDashboard> {
       distanceMeters: distanceMeters,
       elevationGainMeters: elevationGainMeters,
       points: recordedPoints,
+      plannedTrailId: trail?.id,
+      plannedTrailName: trail?.name,
     );
     try {
       await _historyStore.save(hike);
@@ -478,6 +483,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
                     elevationGainMeters: _elevationGainMeters,
                     latestPoint: _latestPoint,
                     points: _recordedPoints,
+                    trail: _plannedTrail,
                   ),
                   const SizedBox(height: 12),
                   _PlannedTrail(
@@ -1652,7 +1658,7 @@ class _HikeHistory extends StatelessWidget {
 
   Future<void> _shareGpx(BuildContext context, SavedHike hike) async {
     final file = XFile.fromData(
-      utf8.encode(toGpx(hike)),
+      utf8.encode(toGpx(hike, name: hike.plannedTrailName ?? 'TrailOff hike')),
       name: gpxFileName(hike.startedAt),
       mimeType: 'application/gpx+xml',
     );
@@ -1733,14 +1739,31 @@ class _HikeHistory extends StatelessWidget {
                     size: 22,
                   ),
                 ),
-                title: Text(
-                  '${_monthName(date.month)} ${date.day}, ${date.year}',
-                  style: const TextStyle(
-                    color: _ink,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_monthName(date.month)} ${date.day}, ${date.year}',
+                      style: const TextStyle(
+                        color: _ink,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    if (hike.plannedTrailName != null)
+                      Text(
+                        hike.plannedTrailName!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _forest,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
                 ),
+                isThreeLine: hike.plannedTrailName != null,
                 subtitle: Text(
                   '${(hike.distanceMeters / 1000).toStringAsFixed(2)} km · $durationMinutes min · ${hike.points.length} GPS points',
                   style: const TextStyle(
@@ -1799,6 +1822,7 @@ class _HikeSummary extends StatelessWidget {
     required this.elevationGainMeters,
     required this.latestPoint,
     required this.points,
+    this.trail,
   });
 
   final VoidCallback onRecordPressed;
@@ -1809,6 +1833,7 @@ class _HikeSummary extends StatelessWidget {
   final double elevationGainMeters;
   final HikePoint? latestPoint;
   final List<HikePoint> points;
+  final Trail? trail;
 
   String get _duration {
     final minutes = elapsedSeconds ~/ 60;
@@ -1823,6 +1848,7 @@ class _HikeSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final plannedTrail = trail;
     return Container(
       padding: const EdgeInsets.fromLTRB(15, 17, 15, 16),
       decoration: BoxDecoration(
@@ -1893,6 +1919,10 @@ class _HikeSummary extends StatelessWidget {
               ),
             ],
           ),
+          if (plannedTrail != null && (isRecording || latestPoint != null)) ...[
+            const SizedBox(height: 10),
+            _TrailheadReturn(trail: plannedTrail, latestPoint: latestPoint),
+          ],
           const SizedBox(height: 20),
           const Text(
             'Elevation',
@@ -1938,6 +1968,74 @@ class _HikeSummary extends StatelessWidget {
                   borderRadius: BorderRadius.circular(15),
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrailheadReturn extends StatelessWidget {
+  const _TrailheadReturn({required this.trail, required this.latestPoint});
+
+  final Trail trail;
+  final HikePoint? latestPoint;
+
+  @override
+  Widget build(BuildContext context) {
+    final point = latestPoint;
+    final bearing = point == null
+        ? null
+        : bearingToTrailhead(
+            fromLatitude: point.latitude,
+            fromLongitude: point.longitude,
+            trailheadLatitude: trail.trailheadLatitude,
+            trailheadLongitude: trail.trailheadLongitude,
+          );
+    final atTrailhead = bearing != null && bearing.distanceMeters < 30;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+      decoration: BoxDecoration(
+        color: _paper,
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Row(
+        children: [
+          Transform.rotate(
+            angle: (bearing?.bearingDegrees ?? 0) * math.pi / 180,
+            child: const Icon(
+              Icons.navigation_rounded,
+              color: _forest,
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Back to ${trail.name} trailhead',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _forest,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  point == null
+                      ? 'Waiting for GPS'
+                      : atTrailhead
+                      ? 'You are at the trailhead'
+                      : '${bearing!.summary} · straight line',
+                  style: const TextStyle(color: _ink, fontSize: 13),
+                ),
+              ],
             ),
           ),
         ],

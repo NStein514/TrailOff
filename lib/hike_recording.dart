@@ -107,6 +107,8 @@ class SavedHike {
     required this.distanceMeters,
     required this.elevationGainMeters,
     required this.points,
+    this.plannedTrailId,
+    this.plannedTrailName,
   });
 
   final DateTime startedAt;
@@ -116,7 +118,14 @@ class SavedHike {
   final double elevationGainMeters;
   final List<HikePoint> points;
 
+  /// The trail the hiker planned before setting off, when there was one.
+  /// Hikes saved before planning existed simply have no trail.
+  final String? plannedTrailId;
+  final String? plannedTrailName;
+
   Map<String, Object> toJson() => {
+    'plannedTrailId': ?plannedTrailId,
+    'plannedTrailName': ?plannedTrailName,
     'startedAt': startedAt.toIso8601String(),
     'finishedAt': finishedAt.toIso8601String(),
     'durationSeconds': durationSeconds,
@@ -134,6 +143,8 @@ class SavedHike {
     points: (json['points'] as List<dynamic>)
         .map((point) => HikePoint.fromJson(point as Map<String, dynamic>))
         .toList(),
+    plannedTrailId: json['plannedTrailId'] as String?,
+    plannedTrailName: json['plannedTrailName'] as String?,
   );
 }
 
