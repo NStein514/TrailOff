@@ -1,13 +1,19 @@
 # TrailOff
 
-TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes on-device hike history, GPX sharing, offline map regions, saved-route recommendations, and a condition-aware packing checklist.
+TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a condition-aware packing checklist, offline trail answers, and a Constellation sky view.
 
 ## Product scope
 
-- Recommend routes based on hiker ability and trail conditions.
-- Generate practical packing checklists for the selected route and conditions.
-- Answer questions grounded in downloaded trail information.
-- Support outdoor activities beyond hiking, including camping.
+- Recommend routes based on hiker ability and trail conditions. *(Implemented: ranks saved hikes against ability and conditions.)*
+- Generate practical packing checklists for the selected route and conditions. *(Implemented.)*
+- Answer questions grounded in downloaded trail information. *(Implemented: offline retrieval that quotes a downloaded guide section.)*
+- Support outdoor activities beyond hiking, including camping. *(Constellation sky view implemented.)*
+
+## Trail answers
+
+Download a region's trail guide, then ask questions about it with no signal. Answers are produced on device by matching the question against the downloaded sections and quoting the section that covers it, so every reply names its source (`From Tour du Portillon · Water & refills`). Questions that mention anything the guide does not discuss are refused instead of answered, and the app lists the topics the guide actually covers.
+
+This is offline keyword retrieval over downloaded text, not a language model, and it does not know about live weather, closures, or current conditions. The guide currently bundled with the app is sample content; replace it with real downloaded guide data before relying on it. Safety-critical details such as access, rules, and hazards should always be checked with local sources.
 
 ## Constellation sky view
 

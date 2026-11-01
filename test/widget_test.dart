@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart'
     show CustomScrollView, Key, MaterialApp, Scaffold, SingleChildScrollView;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trailoff/hike_recording.dart';
 import 'package:trailoff/main.dart';
 import 'package:trailoff/offline_map.dart';
@@ -10,6 +11,8 @@ import 'package:trailoff/packing_checklist.dart';
 import 'package:trailoff/route_recommendations.dart';
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   testWidgets('packing checklist adapts and tracks checked items', (
     WidgetTester tester,
   ) async {

@@ -5,6 +5,32 @@ import 'package:geolocator/geolocator.dart';
 import 'satellites.dart';
 import 'sky_math.dart';
 
+final _nightTheme = ThemeData(
+  useMaterial3: true,
+  colorScheme: const ColorScheme.dark(
+    primary: Color(0xFFCC6666),
+    onPrimary: Colors.black,
+    secondary: Color(0xFFCC6666),
+    onSecondary: Colors.black,
+    surface: Color(0xFF100505),
+    onSurface: Color(0xFFCC6666),
+    onSurfaceVariant: Color(0xFFB85C5C),
+    error: Color(0xFFEE8888),
+    onError: Colors.black,
+    outline: Color(0xFF884444),
+  ),
+  scaffoldBackgroundColor: Colors.black,
+  appBarTheme: const AppBarTheme(
+    backgroundColor: Colors.black,
+    foregroundColor: Color(0xFFCC6666),
+    surfaceTintColor: Colors.transparent,
+  ),
+  textTheme: ThemeData.dark().textTheme.apply(
+    bodyColor: const Color(0xFFCC6666),
+    displayColor: const Color(0xFFCC6666),
+  ),
+);
+
 class ConstellationPage extends StatefulWidget {
   const ConstellationPage({
     super.key,
@@ -29,6 +55,7 @@ class _ConstellationPageState extends State<ConstellationPage>
   Future<void> _motionCancellation = Future<void>.value();
   int _motionGeneration = 0, _locationGeneration = 0;
   bool _locationRequested = false;
+  bool _fullScreen = false, _nightDisplay = false;
   Timer? _timer;
   Position? _location;
   late DateTime _now;
@@ -267,6 +294,145 @@ class _ConstellationPageState extends State<ConstellationPage>
     super.dispose();
   }
 
+  Widget _skyChart(bool manual, List<SatelliteSample> visible) {
+    return Semantics(
+      label:
+          'Sky chart. Dots are catalog stars. Diamonds are predicted satellites.',
+      child: GestureDetector(
+        key: const Key('sky-chart'),
+        onPanUpdate: manual
+            ? (d) => setState(() {
+                _azimuth = (_azimuth - d.delta.dx * 0.25) % 360;
+                _altitude = (_altitude + d.delta.dy * 0.25).clamp(0, 90);
+              })
+            : null,
+        child: SizedBox.expand(
+          child: ClipRect(
+            child: CustomPaint(
+              painter: SkyPainter(
+                location: _location!,
+                time: _now,
+                matrix: manual ? manualView(_azimuth, _altitude) : _matrix!,
+                satellites: visible,
+                nightDisplay: _nightDisplay,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _expandedSky(
+    bool manual,
+    bool sensorReady,
+    bool current,
+    List<SatelliteSample> visible,
+  ) {
+    if (_location == null) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_locationStatus),
+              TextButton.icon(
+                onPressed: _locating ? null : _start,
+                icon: const Icon(Icons.my_location),
+                label: Text(_locating ? 'Finding location…' : 'Retry location'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final status = !_enabled
+        ? 'Satellite predictions are off.'
+        : !current
+        ? (_loading
+              ? 'Updating satellite predictions…'
+              : 'Satellite positions unavailable for the current time.')
+        : visible.isEmpty
+        ? 'ISS & Hubble: none predicted visible now.'
+        : '${visible.map((s) => s.name).join(', ')} predicted above the horizon; may be outside this view.';
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: constraints.maxHeight * 0.25,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  Text(
+                    manual
+                        ? 'Manual view · drag to explore (true north)'
+                        : 'Sensor aligned · approximate true north',
+                  ),
+                  if (!sensorReady)
+                    const Text('Orientation unavailable or waiting.'),
+                  Text(
+                    '${_now.toIso8601String().substring(11, 19)} UTC · ${_location!.latitude.toStringAsFixed(2)}°, ${_location!.longitude.toStringAsFixed(2)}°',
+                  ),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      TextButton.icon(
+                        onPressed: () => setState(() => _manual = !_manual),
+                        icon: Icon(
+                          _manual
+                              ? Icons.screen_rotation
+                              : Icons.pan_tool_outlined,
+                        ),
+                        label: Text(
+                          _manual ? 'Use sensors' : 'Use manual view',
+                        ),
+                      ),
+                      if (manual)
+                        TextButton(
+                          onPressed: () => setState(() {
+                            _azimuth = 0;
+                            _altitude = 45;
+                          }),
+                          child: const Text('Face north'),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Expanded(child: _skyChart(manual, visible)),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: constraints.maxHeight * 0.25,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  if (manual)
+                    Text(
+                      'Center: ${_azimuth.round()}° azimuth · ${_altitude.round()}° altitude',
+                    ),
+                  Text(status),
+                  const Text('Dots: stars · Diamonds: predicted satellites'),
+                  const Text(
+                    'Chart predictions, not identification of lights you see.',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final clockNow = _clock();
@@ -289,141 +455,164 @@ class _ConstellationPageState extends State<ConstellationPage>
               .whereType<SatelliteSample>()
               .toList()
         : <SatelliteSample>[];
-    return Scaffold(
-      appBar: AppBar(title: const Text('Constellation')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            const Text(
-              'Your campsite sky',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const Text(
-              'Point the back of your phone toward the sky. No camera is used. Stars are a calculated chart, including in daylight.',
-            ),
-            const SizedBox(height: 8),
-            Text(_locationStatus),
-            TextButton.icon(
-              onPressed: _locating ? null : _start,
-              icon: const Icon(Icons.my_location),
-              label: Text(
-                _locating
-                    ? 'Finding location…'
-                    : _location == null
-                    ? 'Use my location'
-                    : 'Refresh location',
+    return Theme(
+      data: _nightDisplay ? _nightTheme : Theme.of(context),
+      child: PopScope(
+        canPop: !_fullScreen,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop && _fullScreen) setState(() => _fullScreen = false);
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(_fullScreen ? 'Sky view' : 'Constellation'),
+            leading: _fullScreen
+                ? IconButton(
+                    tooltip: 'Exit full screen',
+                    icon: const Icon(Icons.fullscreen_exit),
+                    onPressed: () => setState(() => _fullScreen = false),
+                  )
+                : null,
+            actions: [
+              IconButton(
+                tooltip: _nightDisplay
+                    ? 'Turn off red night display'
+                    : 'Turn on red night display',
+                isSelected: _nightDisplay,
+                icon: const Icon(Icons.nightlight_outlined),
+                selectedIcon: const Icon(Icons.nightlight),
+                onPressed: () => setState(() => _nightDisplay = !_nightDisplay),
               ),
-            ),
-            if (_location != null) ...[
-              Text(
-                '${_now.toIso8601String().substring(0, 19).replaceFirst('T', ' ')} UTC',
-              ),
-              Text(
-                manual
-                    ? 'Manual view · drag to explore (true north)'
-                    : 'Sensor aligned · approximate true north',
-              ),
-              if (!sensorReady)
-                const Text(
-                  'Orientation unavailable or waiting. Manual view works without sensors.',
+              if (!_fullScreen)
+                IconButton(
+                  tooltip: 'Full-screen sky',
+                  icon: const Icon(Icons.fullscreen),
+                  onPressed: _location == null
+                      ? null
+                      : () => setState(() => _fullScreen = true),
                 ),
-              const Text(
-                'For alignment, move the phone in a figure eight away from magnets.',
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Manual view'),
-                value: _manual,
-                onChanged: (value) => setState(() => _manual = value),
-              ),
-              Semantics(
-                label:
-                    'Sky chart. White dots are catalog stars. Amber diamonds are predicted visible satellites.',
-                child: GestureDetector(
-                  onPanUpdate: manual
-                      ? (d) => setState(() {
-                          _azimuth = (_azimuth - d.delta.dx * 0.25) % 360;
-                          _altitude = (_altitude + d.delta.dy * 0.25).clamp(
-                            0,
-                            90,
-                          );
-                        })
-                      : null,
-                  child: SizedBox(
-                    height: 360,
-                    width: double.infinity,
-                    child: ClipRect(
-                      child: CustomPaint(
-                        painter: SkyPainter(
-                          location: _location!,
-                          time: _now,
-                          matrix: manual
-                              ? manualView(_azimuth, _altitude)
-                              : _matrix!,
-                          satellites: visible,
+            ],
+          ),
+          body: SafeArea(
+            child: _fullScreen
+                ? _expandedSky(manual, sensorReady, current, visible)
+                : ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      const Text(
+                        'Your campsite sky',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
+                      const Text(
+                        'Point the back of your phone toward the sky. No camera is used. Stars are a calculated chart, including in daylight.',
+                      ),
+                      const SizedBox(height: 8),
+                      if (_nightDisplay)
+                        const Text(
+                          'Red night display is on. Adjust device brightness separately.',
+                        ),
+                      Text(_locationStatus),
+                      TextButton.icon(
+                        onPressed: _locating ? null : _start,
+                        icon: const Icon(Icons.my_location),
+                        label: Text(
+                          _locating
+                              ? 'Finding location…'
+                              : _location == null
+                              ? 'Use my location'
+                              : 'Refresh location',
+                        ),
+                      ),
+                      if (_location != null) ...[
+                        Text(
+                          '${_now.toIso8601String().substring(0, 19).replaceFirst('T', ' ')} UTC',
+                        ),
+                        Text(
+                          manual
+                              ? 'Manual view · drag to explore (true north)'
+                              : 'Sensor aligned · approximate true north',
+                        ),
+                        if (!sensorReady)
+                          const Text(
+                            'Orientation unavailable or waiting. Manual view works without sensors.',
+                          ),
+                        const Text(
+                          'For alignment, move the phone in a figure eight away from magnets.',
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Manual view'),
+                          value: _manual,
+                          onChanged: (value) => setState(() => _manual = value),
+                        ),
+                        SizedBox(
+                          height: 360,
+                          child: _skyChart(manual, visible),
+                        ),
+                        if (manual)
+                          Text(
+                            'Center: ${_azimuth.round()}° azimuth · ${_altitude.round()}° altitude',
+                          ),
+                        Text(
+                          _nightDisplay
+                              ? 'Dots: bright stars · Diamonds: predicted satellites'
+                              : 'White: bright stars · Amber: predicted satellite',
+                        ),
+                      ],
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Live satellite predictions'),
+                        subtitle: Text(
+                          _satellites.configured
+                              ? 'Uses internet and sends your coordinates to N2YO.'
+                              : 'Unavailable in this build: configure an N2YO API key. Stars still work offline.',
+                        ),
+                        value: _enabled,
+                        onChanged: _satellites.configured && _location != null
+                            ? (value) {
+                                setState(() {
+                                  _enabled = value;
+                                  _tracks = [];
+                                  _fetchedAt = null;
+                                  _attemptAt = null;
+                                  _generation++;
+                                });
+                                if (value) _loadSatellites();
+                              }
+                            : null,
+                      ),
+                      if (_enabled) ...[
+                        Text(_satelliteStatus),
+                        if (_fetchedAt != null)
+                          Text(
+                            'Updated ${_fetchedAt!.toIso8601String().substring(11, 19)} UTC',
+                          ),
+                        if (current)
+                          Text(
+                            visible.isEmpty
+                                ? 'No full-visibility predictions for ISS or Hubble now.'
+                                : '${visible.map((s) => s.name).join(', ')} predicted above the horizon; may be outside this view.',
+                          ),
+                        if (!current && !_loading)
+                          Text(
+                            _fetchedAt == null
+                                ? 'No current satellite positions to display.'
+                                : 'Satellite positions do not cover the current time. Waiting for fresh predictions.',
+                          ),
+                      ],
+                      const SizedBox(height: 12),
+                      const Text(
+                        'A sky guide, not object recognition',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const Text(
+                        'Sensors only align this chart. Labels do not identify a light you see. This first version includes 21 bright stars, ISS and Hubble, not all satellites, planets or constellation outlines. Clouds, terrain, light pollution and compass errors can hide or shift objects. Satellite visibility is predicted, never guaranteed. Partly visible passes with uncertain visibility timing are omitted.',
+                      ),
+                    ],
                   ),
-                ),
-              ),
-              if (manual)
-                Text(
-                  'Center: ${_azimuth.round()}° azimuth · ${_altitude.round()}° altitude',
-                ),
-              const Text('White: bright stars · Amber: predicted satellite'),
-            ],
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Live satellite predictions'),
-              subtitle: Text(
-                _satellites.configured
-                    ? 'Uses internet and sends your coordinates to N2YO.'
-                    : 'Unavailable in this build: configure an N2YO API key. Stars still work offline.',
-              ),
-              value: _enabled,
-              onChanged: _satellites.configured && _location != null
-                  ? (value) {
-                      setState(() {
-                        _enabled = value;
-                        _tracks = [];
-                        _fetchedAt = null;
-                        _attemptAt = null;
-                        _generation++;
-                      });
-                      if (value) _loadSatellites();
-                    }
-                  : null,
-            ),
-            if (_enabled) ...[
-              Text(_satelliteStatus),
-              if (_fetchedAt != null)
-                Text(
-                  'Updated ${_fetchedAt!.toIso8601String().substring(11, 19)} UTC',
-                ),
-              if (current)
-                Text(
-                  visible.isEmpty
-                      ? 'No full-visibility predictions for ISS or Hubble now.'
-                      : '${visible.map((s) => s.name).join(', ')} predicted above the horizon; may be outside this view.',
-                ),
-              if (!current && !_loading)
-                Text(
-                  _fetchedAt == null
-                      ? 'No current satellite positions to display.'
-                      : 'Satellite positions do not cover the current time. Waiting for fresh predictions.',
-                ),
-            ],
-            const SizedBox(height: 12),
-            const Text(
-              'A sky guide, not object recognition',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const Text(
-              'Sensors only align this chart. Labels do not identify a light you see. This first version includes 21 bright stars, ISS and Hubble, not all satellites, planets or constellation outlines. Clouds, terrain, light pollution and compass errors can hide or shift objects. Satellite visibility is predicted, never guaranteed. Partly visible passes with uncertain visibility timing are omitted.',
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -436,19 +625,21 @@ class SkyPainter extends CustomPainter {
     required this.time,
     required this.matrix,
     required this.satellites,
+    this.nightDisplay = false,
   });
   final Position location;
   final DateTime time;
   final List<double> matrix;
   final List<SatelliteSample> satellites;
+  final bool nightDisplay;
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(
       Offset.zero & size,
-      Paint()..color = const Color(0xFF101B2D),
+      Paint()..color = nightDisplay ? Colors.black : const Color(0xFF101B2D),
     );
     final grid = Paint()
-      ..color = const Color(0xFF33465E)
+      ..color = nightDisplay ? const Color(0xFF552222) : const Color(0xFF33465E)
       ..strokeWidth = 1;
     for (var altitude = 0; altitude <= 60; altitude += 30) {
       Offset? last;
@@ -473,7 +664,13 @@ class SkyPainter extends CustomPainter {
         size,
       );
       if (p != null) {
-        _label(canvas, size, p, entry.value, Colors.blueGrey.shade200);
+        _label(
+          canvas,
+          size,
+          p,
+          entry.value,
+          nightDisplay ? const Color(0xFFB85C5C) : Colors.blueGrey.shade200,
+        );
       }
     }
     for (final star in brightStars) {
@@ -492,9 +689,15 @@ class SkyPainter extends CustomPainter {
       canvas.drawCircle(
         p,
         (3 - star.magnitude * 0.5).clamp(1.5, 4),
-        Paint()..color = Colors.white,
+        Paint()..color = nightDisplay ? const Color(0xFFCC6666) : Colors.white,
       );
-      _label(canvas, size, p, star.name, Colors.white70);
+      _label(
+        canvas,
+        size,
+        p,
+        star.name,
+        nightDisplay ? const Color(0xFFCC6666) : Colors.white70,
+      );
     }
     for (final satellite in satellites) {
       final p = projectSky(satellite.direction, matrix, size);
@@ -505,8 +708,17 @@ class SkyPainter extends CustomPainter {
         ..lineTo(p.dx, p.dy + 6)
         ..lineTo(p.dx - 6, p.dy)
         ..close();
-      canvas.drawPath(diamond, Paint()..color = Colors.amber);
-      _label(canvas, size, p, '${satellite.name} (predicted)', Colors.amber);
+      canvas.drawPath(
+        diamond,
+        Paint()..color = nightDisplay ? const Color(0xFFEE8888) : Colors.amber,
+      );
+      _label(
+        canvas,
+        size,
+        p,
+        '${satellite.name} (predicted)',
+        nightDisplay ? const Color(0xFFEE8888) : Colors.amber,
+      );
     }
     final center = Offset(size.width / 2, size.height / 2);
     canvas.drawLine(

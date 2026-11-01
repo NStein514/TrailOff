@@ -11,6 +11,8 @@ import 'constellation.dart';
 import 'offline_map.dart';
 import 'packing_checklist.dart';
 import 'route_recommendations.dart';
+import 'trail_answers.dart';
+import 'trail_guide.dart';
 
 void main() {
   runApp(const TrailOffApp());
@@ -28,6 +30,7 @@ class TrailOffApp extends StatelessWidget {
     this.offlineMapRepository,
     this.offlineMapSupported,
     this.nativeMapSupported,
+    this.trailGuideStore,
   });
 
   final HikeLocationSource? locationSource;
@@ -35,6 +38,7 @@ class TrailOffApp extends StatelessWidget {
   final OfflineMapRepository? offlineMapRepository;
   final bool? offlineMapSupported;
   final bool? nativeMapSupported;
+  final TrailGuideStore? trailGuideStore;
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +57,7 @@ class TrailOffApp extends StatelessWidget {
         offlineMapRepository: offlineMapRepository,
         offlineMapSupported: offlineMapSupported,
         nativeMapSupported: nativeMapSupported,
+        trailGuideStore: trailGuideStore,
       ),
     );
   }
@@ -66,6 +71,7 @@ class HikeDashboard extends StatefulWidget {
     this.offlineMapRepository,
     this.offlineMapSupported,
     this.nativeMapSupported,
+    this.trailGuideStore,
   });
 
   final HikeLocationSource? locationSource;
@@ -73,6 +79,7 @@ class HikeDashboard extends StatefulWidget {
   final OfflineMapRepository? offlineMapRepository;
   final bool? offlineMapSupported;
   final bool? nativeMapSupported;
+  final TrailGuideStore? trailGuideStore;
 
   @override
   State<HikeDashboard> createState() => _HikeDashboardState();
@@ -400,6 +407,8 @@ class _HikeDashboardState extends State<HikeDashboard> {
                     ability: _hikingAbility,
                     conditions: _trailConditions,
                   ),
+                  const SizedBox(height: 12),
+                  TrailAnswers(store: widget.trailGuideStore),
                   const SizedBox(height: 20),
                   _HikeHistory(
                     hikes: _savedHikes,
