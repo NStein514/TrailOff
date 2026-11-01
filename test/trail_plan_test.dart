@@ -205,6 +205,36 @@ void main() {
     expect(find.text('Download map for offline use'), findsOneWidget);
   });
 
+  testWidgets('the packing checklist follows the planned trail', (
+    WidgetTester tester,
+  ) async {
+    await _pumpDashboard(tester, _MemoryPlanStore('tour-du-portillon'));
+    await tester.scrollUntilVisible(
+      find.text('Tailored to Lac du Portillon loop · 12.4 km · +1120 m'),
+      300,
+    );
+    expect(
+      find.text('Tailored to Lac du Portillon loop · 12.4 km · +1120 m'),
+      findsOneWidget,
+    );
+    expect(find.text('Trekking poles'), findsOneWidget);
+    // The dashboard starts on dry conditions, so this is a half litre above
+    // the 3 L the same route needs in the wet.
+    expect(find.text('About 3.5 L for 5 h 30 on the trail'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('planned-trail')),
+      -300,
+    );
+    await tester.tap(find.byKey(const Key('clear-plan')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Suggested essentials · check off what you have packed'),
+      300,
+    );
+    expect(find.text('Trekking poles'), findsNothing);
+  });
+
   testWidgets('dashboard invites a route when nothing is planned', (
     WidgetTester tester,
   ) async {

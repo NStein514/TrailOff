@@ -1,12 +1,12 @@
 # TrailOff
 
-TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue, plan-aware recording, on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a condition-aware packing checklist, offline trail answers, and a Constellation sky view.
+TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue, plan-aware recording, on-device hike history, GPX sharing, offline map regions, saved-route recommendations, a plan-aware packing checklist, offline trail answers, and a Constellation sky view.
 
 ## Product scope
 
 - Discover trails and match them to the hiker. *(Implemented: sample catalogue with ability and condition fit.)*
 - Recommend routes based on hiker ability and trail conditions. *(Implemented: ranks saved hikes against ability and conditions.)*
-- Generate practical packing checklists for the selected route and conditions. *(Implemented.)*
+- Generate practical packing checklists for the selected route and conditions. *(Implemented: built from the planned route's distance, ascent, walking time and high point, plus ability and conditions.)*
 - Answer questions grounded in downloaded trail information. *(Implemented: offline retrieval that quotes a downloaded guide section.)*
 - Support outdoor activities beyond hiking, including camping. *(Constellation sky view implemented.)*
 
@@ -29,6 +29,12 @@ Two limits remain. The downloaded area is a box roughly 11 km by 11 km around th
 While a plan is active, the live hike card gains a **Back to _trail_ trailhead** row: the straight-line distance and a compass bearing from the latest GPS fix back to the trailhead, with an arrow that rotates to that bearing and a plain *You are at the trailhead* once you are within 30 m. It is a heading and a distance, not a route: it ignores terrain, cliffs and where the path actually goes, so it is for orientation only.
 
 Saving a hike records which trail it was planned for. **Past adventures** then lists the trail under the date, and the shared GPX track is named after it. Hikes saved before planning existed still load and simply have no trail.
+
+## Packing for the plan
+
+The checklist is built from the planned route as well as the day's ability and conditions. Water is estimated from the route's walking time at half a litre an hour, raised for heat and rounded up to the nearest half litre; a route over three hours or 500 m of ascent adds **Extra food**; 500 m of ascent adds **Trekking poles**; a high point above 1800 m adds an **Insulating layer**. The card names what it was built for (*Tailored to Lac du Portillon loop · 12.4 km · +1120 m*), and ticking items resets when the route or conditions change so a new plan starts unpacked. With no plan the list falls back to general essentials.
+
+These are rules of thumb, not a substitute for judgement. They do not know your pace, medical needs, water sources along the route, or the forecast for the day.
 
 ## Trail answers
 

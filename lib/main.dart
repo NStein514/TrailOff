@@ -507,6 +507,7 @@ class _HikeDashboardState extends State<HikeDashboard> {
                   PackingChecklist(
                     ability: _hikingAbility,
                     conditions: _trailConditions,
+                    trail: _plannedTrail,
                   ),
                   const SizedBox(height: 12),
                   TrailAnswers(store: widget.trailGuideStore),

@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'route_recommendations.dart';
+import 'trail_catalogue.dart';
 
 class PackingItem {
   const PackingItem({
@@ -14,20 +17,61 @@ class PackingItem {
   final String reason;
 }
 
+/// Litres to carry for a route, from its walking time and the day's
+/// conditions, rounded up to the nearest half litre.
+double waterLitresFor({
+  required Trail trail,
+  required TrailConditions conditions,
+}) {
+  final litresPerHour = 0.5;
+  final conditionFactor = switch (conditions) {
+    TrailConditions.dry => 1.15,
+    TrailConditions.wet => 1.0,
+    TrailConditions.snowy => 0.9,
+    TrailConditions.hot => 1.4,
+  };
+  final raw =
+      math.max(0.75, trail.durationMinutes / 60 * litresPerHour) *
+      conditionFactor;
+  return (raw / 0.5).ceilToDouble() * 0.5;
+}
+
+String litreLabel(double litres) => litres == litres.roundToDouble()
+    ? litres.toStringAsFixed(0)
+    : litres.toStringAsFixed(1);
+
 List<PackingItem> packingChecklistFor({
   required HikingAbility ability,
   required TrailConditions conditions,
+  Trail? trail,
 }) {
   final items = <PackingItem>[
-    PackingItem(
-      id: 'water',
-      label: 'Water',
-      reason: switch (ability) {
-        HikingAbility.beginner => 'At least 1.5 L for a shorter hike',
-        HikingAbility.intermediate => 'At least 2 L for a longer day out',
-        HikingAbility.advanced => 'Plan extra water for a full-day route',
-      },
-    ),
+    if (trail == null)
+      PackingItem(
+        id: 'water',
+        label: 'Water',
+        reason: switch (ability) {
+          HikingAbility.beginner => 'At least 1.5 L for a shorter hike',
+          HikingAbility.intermediate => 'At least 2 L for a longer day out',
+          HikingAbility.advanced => 'Plan extra water for a full-day route',
+        },
+      )
+    else
+      PackingItem(
+        id: 'water',
+        label: 'Water',
+        reason:
+            'About ${litreLabel(waterLitresFor(trail: trail, conditions: conditions))} L '
+            'for ${trail.durationLabel} on the trail',
+      ),
+    if (trail != null &&
+        (trail.durationMinutes >= 180 || trail.ascentMeters >= 500))
+      PackingItem(
+        id: 'extra-food',
+        label: 'Extra food',
+        reason:
+            '${trail.distanceLabel} and ${trail.ascentLabel} needs more than a snack',
+      ),
     const PackingItem(
       id: 'navigation',
       label: 'Navigation',
@@ -43,6 +87,19 @@ List<PackingItem> packingChecklistFor({
       label: 'Headlamp',
       reason: 'Keep a light available if your hike takes longer than planned',
     ),
+    if (trail != null && trail.ascentMeters >= 500)
+      const PackingItem(
+        id: 'poles',
+        label: 'Trekking poles',
+        reason: 'Long descents are easier on the knees with poles',
+      ),
+    if (trail != null && trail.highestPointMeters >= 1800)
+      PackingItem(
+        id: 'insulation',
+        label: 'Insulating layer',
+        reason:
+            'It can be much colder at ${trail.highestPointMeters} m than in the valley',
+      ),
   ];
 
   switch (conditions) {
@@ -103,10 +160,15 @@ class PackingChecklist extends StatefulWidget {
     super.key,
     required this.ability,
     required this.conditions,
+    this.trail,
   });
 
   final HikingAbility ability;
   final TrailConditions conditions;
+
+  /// The planned route, when there is one. Its distance, ascent, walking time
+  /// and high point change what the list recommends.
+  final Trail? trail;
 
   @override
   State<PackingChecklist> createState() => _PackingChecklistState();
@@ -119,16 +181,19 @@ class _PackingChecklistState extends State<PackingChecklist> {
   void didUpdateWidget(covariant PackingChecklist oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.ability != widget.ability ||
-        oldWidget.conditions != widget.conditions) {
+        oldWidget.conditions != widget.conditions ||
+        oldWidget.trail?.id != widget.trail?.id) {
       _checkedItems.clear();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final trail = widget.trail;
     final items = packingChecklistFor(
       ability: widget.ability,
       conditions: widget.conditions,
+      trail: trail,
     );
     final checkedCount = items
         .where((item) => _checkedItems.contains(item.id))
@@ -169,9 +234,11 @@ class _PackingChecklistState extends State<PackingChecklist> {
             ],
           ),
           const SizedBox(height: 3),
-          const Text(
-            'Suggested essentials · check off what you have packed',
-            style: TextStyle(color: Color(0xFF777E79), fontSize: 11),
+          Text(
+            trail == null
+                ? 'Suggested essentials · check off what you have packed'
+                : 'Tailored to ${trail.name} · ${trail.distanceLabel} · ${trail.ascentLabel}',
+            style: const TextStyle(color: Color(0xFF777E79), fontSize: 11),
           ),
           const SizedBox(height: 8),
           ...items.map((item) {
