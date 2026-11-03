@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'hike_recording.dart';
 import 'trip_photos.dart';
+import 'units.dart';
 
 const _forest = Color(0xFF3E8967);
 const _ink = Color(0xFF292D2B);
@@ -235,7 +236,9 @@ class _TripAlbumPageState extends State<TripAlbumPage> {
             ),
             const SizedBox(height: 6),
             Text(
-              '${_formatDate(trip.startedAt)} · ${(trip.distanceMeters / 1000).toStringAsFixed(2)} km · ${trip.points.length} GPS points',
+              '${_formatDate(trip.startedAt)} · '
+              '${UnitsScope.of(context).distance(trip.distanceMeters, decimals: 2)} · '
+              '${trip.points.length} GPS points',
               style: const TextStyle(color: Color(0xFF777E79), fontSize: 12),
             ),
             const SizedBox(height: 16),

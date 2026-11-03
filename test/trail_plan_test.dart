@@ -124,7 +124,7 @@ void main() {
 
     expect(find.text('Your plan'), findsOneWidget);
     expect(find.text('Lac du Portillon loop'), findsOneWidget);
-    expect(find.text('12.4 km · +1120 m ascent · 5 h 30'), findsOneWidget);
+    expect(find.text('12.4 km · +1,120 m ascent · 5 h 30'), findsOneWidget);
     expect(find.text('Too demanding today'), findsOneWidget);
 
     await tester.scrollUntilVisible(
@@ -217,11 +217,11 @@ void main() {
   ) async {
     await _pumpDashboard(tester, _MemoryPlanStore('tour-du-portillon'));
     await tester.scrollUntilVisible(
-      find.text('Tailored to Lac du Portillon loop · 12.4 km · +1120 m'),
+      find.text('Tailored to Lac du Portillon loop · 12.4 km · +1,120 m'),
       300,
     );
     expect(
-      find.text('Tailored to Lac du Portillon loop · 12.4 km · +1120 m'),
+      find.text('Tailored to Lac du Portillon loop · 12.4 km · +1,120 m'),
       findsOneWidget,
     );
     expect(find.text('Trekking poles'), findsOneWidget);

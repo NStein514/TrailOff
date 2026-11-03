@@ -124,13 +124,27 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(const Key('trail-tour-du-portillon')),
       240,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const Key('catalogue-list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     expect(badgeIn('tour-du-portillon', 'Too demanding today'), findsOneWidget);
 
     await tester.scrollUntilVisible(
       find.byKey(const Key('catalogue-ability')),
       -240,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const Key('catalogue-list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
+    await tester.ensureVisible(find.byKey(const Key('catalogue-ability')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('catalogue-ability')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Advanced').last);
@@ -143,6 +157,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(const Key('trail-tour-du-portillon')),
       240,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const Key('catalogue-list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     expect(badgeIn('tour-du-portillon', 'Fits today'), findsOneWidget);
     expect(badgeIn('tour-du-portillon', 'Too demanding today'), findsNothing);
@@ -205,6 +225,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(const Key('trail-tour-du-portillon')),
       240,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const Key('catalogue-list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.ensureVisible(find.byKey(const Key('trail-tour-du-portillon')));
     await tester.pumpAndSettle();

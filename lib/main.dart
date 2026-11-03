@@ -24,6 +24,7 @@ import 'trail_guide.dart';
 import 'trail_plan.dart';
 import 'trip_album_page.dart';
 import 'trip_photos.dart';
+import 'units.dart';
 
 void main() {
   runApp(const TrailOffApp());
@@ -33,7 +34,7 @@ const _forest = Color(0xFF3E8967);
 const _ink = Color(0xFF292D2B);
 const _paper = Color(0xFFF0F7F2);
 
-class TrailOffApp extends StatelessWidget {
+class TrailOffApp extends StatefulWidget {
   const TrailOffApp({
     super.key,
     this.locationSource,
@@ -48,6 +49,7 @@ class TrailOffApp extends StatelessWidget {
     this.trailDiscoverySource,
     this.discoveredTrailStore,
     this.trailSearchLocation,
+    this.unitPreferenceStore,
   });
 
   final HikeLocationSource? locationSource;
@@ -62,9 +64,54 @@ class TrailOffApp extends StatelessWidget {
   final TrailDiscoverySource? trailDiscoverySource;
   final DiscoveredTrailStore? discoveredTrailStore;
   final TrailSearchLocation? trailSearchLocation;
+  final UnitPreferenceStore? unitPreferenceStore;
+
+  @override
+  State<TrailOffApp> createState() => _TrailOffAppState();
+}
+
+class _TrailOffAppState extends State<TrailOffApp> {
+  late final UnitPreferenceStore _unitStore =
+      widget.unitPreferenceStore ?? SharedPreferencesUnitPreferenceStore();
+  MeasurementSystem _system = MeasurementSystem.metric;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnits();
+  }
+
+  Future<void> _loadUnits() async {
+    MeasurementSystem system;
+    try {
+      system = await _unitStore.load();
+    } catch (_) {
+      system = MeasurementSystem.metric;
+    }
+    if (!mounted || system == _system) return;
+    setState(() => _system = system);
+  }
+
+  Future<void> _changeUnits(MeasurementSystem system) async {
+    if (system == _system) return;
+    setState(() => _system = system);
+    try {
+      await _unitStore.save(system);
+    } catch (_) {
+      // The choice still applies for this session even if it cannot be saved.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    return UnitsScope(
+      units: Units(_system),
+      onChanged: _changeUnits,
+      child: _buildApp(),
+    );
+  }
+
+  Widget _buildApp() {
     return MaterialApp(
       title: 'TrailOff',
       debugShowCheckedModeBanner: false,
@@ -75,18 +122,18 @@ class TrailOffApp extends StatelessWidget {
         fontFamily: 'Roboto',
       ),
       home: HikeDashboard(
-        locationSource: locationSource,
-        historyStore: historyStore,
-        offlineMapRepository: offlineMapRepository,
-        offlineMapSupported: offlineMapSupported,
-        nativeMapSupported: nativeMapSupported,
-        trailGuideStore: trailGuideStore,
-        trailPlanStore: trailPlanStore,
-        tripPhotoStore: tripPhotoStore,
-        tripPhotoPicker: tripPhotoPicker,
-        trailDiscoverySource: trailDiscoverySource,
-        discoveredTrailStore: discoveredTrailStore,
-        trailSearchLocation: trailSearchLocation,
+        locationSource: widget.locationSource,
+        historyStore: widget.historyStore,
+        offlineMapRepository: widget.offlineMapRepository,
+        offlineMapSupported: widget.offlineMapSupported,
+        nativeMapSupported: widget.nativeMapSupported,
+        trailGuideStore: widget.trailGuideStore,
+        trailPlanStore: widget.trailPlanStore,
+        tripPhotoStore: widget.tripPhotoStore,
+        tripPhotoPicker: widget.tripPhotoPicker,
+        trailDiscoverySource: widget.trailDiscoverySource,
+        discoveredTrailStore: widget.discoveredTrailStore,
+        trailSearchLocation: widget.trailSearchLocation,
       ),
     );
   }
@@ -571,6 +618,8 @@ class _HikeDashboardState extends State<HikeDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final units = UnitsScope.of(context);
+    final onUnitsChanged = UnitsScope.onChangedOf(context);
     return Scaffold(
       body: SafeArea(
         child: CustomScrollView(
@@ -599,6 +648,21 @@ class _HikeDashboardState extends State<HikeDashboard> {
                             ),
                           ),
                         ),
+                        if (onUnitsChanged != null)
+                          Tooltip(
+                            message: units.isMetric
+                                ? 'Switch to miles and feet'
+                                : 'Switch to kilometres and metres',
+                            child: TextButton.icon(
+                              key: const Key('units-toggle'),
+                              icon: const Icon(
+                                Icons.straighten_rounded,
+                                size: 18,
+                              ),
+                              label: Text(units.distanceUnit),
+                              onPressed: () => onUnitsChanged(units.other),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -1663,6 +1727,7 @@ class _PlannedTrail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final planned = trail;
+    final units = UnitsScope.of(context);
     return Container(
       key: const Key('planned-trail'),
       padding: const EdgeInsets.all(16),
@@ -1734,9 +1799,10 @@ class _PlannedTrail extends StatelessWidget {
             const SizedBox(height: 7),
             Text(
               planned.elevationKnown
-                  ? '${planned.distanceLabel} · ${planned.ascentLabel} ascent · '
+                  ? '${planned.distanceLabel(units)} · '
+                        '${planned.ascentLabel(units)} ascent · '
                         '${planned.durationLabel}'
-                  : '${planned.distanceLabel} · ascent unknown · '
+                  : '${planned.distanceLabel(units)} · ascent unknown · '
                         '${planned.durationLabel}',
               style: const TextStyle(
                 color: Color(0xFF5F6862),
@@ -1804,6 +1870,7 @@ class _RouteAdvisor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final units = UnitsScope.of(context);
     final recommendation = recommendSavedRoute(
       hikes: hikes,
       ability: ability,
@@ -1942,7 +2009,10 @@ class _RouteAdvisor extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${(recommendation.hike.distanceMeters / 1000).toStringAsFixed(1)} km · +${recommendation.hike.elevationGainMeters.round()} m ascent · ${(recommendation.hike.durationSeconds / 60).round()} min',
+                    '${units.distance(recommendation.hike.distanceMeters)} · '
+                    '${units.ascent(recommendation.hike.elevationGainMeters)} '
+                    'ascent · '
+                    '${(recommendation.hike.durationSeconds / 60).round()} min',
                     style: const TextStyle(
                       color: Color(0xFF5F6862),
                       fontSize: 12,
@@ -2024,6 +2094,7 @@ class _HikeHistory extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final units = UnitsScope.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2117,7 +2188,8 @@ class _HikeHistory extends StatelessWidget {
                 ),
                 isThreeLine: hike.plannedTrailName != null,
                 subtitle: Text(
-                  '${(hike.distanceMeters / 1000).toStringAsFixed(2)} km · $durationMinutes min · ${hike.points.length} GPS points',
+                  '${units.distance(hike.distanceMeters, decimals: 2)} · '
+                  '$durationMinutes min · ${hike.points.length} GPS points',
                   style: const TextStyle(
                     color: Color(0xFF818883),
                     fontSize: 11,
@@ -2127,7 +2199,7 @@ class _HikeHistory extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '+${hike.elevationGainMeters.round()} m',
+                      units.ascent(hike.elevationGainMeters),
                       style: const TextStyle(
                         color: _forest,
                         fontWeight: FontWeight.w700,
@@ -2231,6 +2303,7 @@ class _HikeSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final plannedTrail = trail;
+    final units = UnitsScope.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(15, 17, 15, 16),
       decoration: BoxDecoration(
@@ -2283,21 +2356,21 @@ class _HikeSummary extends StatelessWidget {
               _MetricTile(
                 icon: Icons.route_rounded,
                 label: 'Distance',
-                value: '${(distanceMeters / 1000).toStringAsFixed(2)} km',
+                value: units.distance(distanceMeters, decimals: 2),
               ),
               _MetricTile(
                 icon: Icons.speed_rounded,
                 label: 'Avg speed',
-                value: elapsedSeconds == 0
-                    ? '0.0 km/h'
-                    : '${(distanceMeters / elapsedSeconds * 3.6).toStringAsFixed(1)} km/h',
+                value: units.speed(
+                  elapsedSeconds == 0 ? 0 : distanceMeters / elapsedSeconds,
+                ),
               ),
               _MetricTile(
                 icon: Icons.north_east_rounded,
                 label: 'Altitude',
                 value: latestPoint == null
-                    ? '— m'
-                    : '${latestPoint!.altitude.round()} m',
+                    ? '— ${units.heightUnit}'
+                    : units.height(latestPoint!.altitude),
               ),
             ],
           ),
@@ -2322,7 +2395,8 @@ class _HikeSummary extends StatelessWidget {
           _ElevationChart(points: points),
           const SizedBox(height: 8),
           Text(
-            '${elevationGainMeters.round()} m climbed · ${latestPoint == null ? 'Waiting for GPS' : '${latestPoint!.accuracy.round()} m GPS accuracy'}',
+            '${units.height(elevationGainMeters)} climbed · '
+            '${latestPoint == null ? 'Waiting for GPS' : '${units.accuracy(latestPoint!.accuracy)} GPS accuracy'}',
             style: const TextStyle(color: Color(0xFF858B86), fontSize: 11),
           ),
           const SizedBox(height: 15),
@@ -2397,6 +2471,7 @@ class _OffRouteWarning extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final units = UnitsScope.of(context);
     // Rounded to 10 m so the figure does not jitter with every GPS fix.
     final rounded = (distanceMeters / 10).round() * 10;
     return Container(
@@ -2430,7 +2505,8 @@ class _OffRouteWarning extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'About $rounded m from the line. Head back towards it.',
+                  'About ${units.shortDistance(rounded.toDouble())} from the '
+                  'line. Head back towards it.',
                   style: const TextStyle(
                     color: Color(0xFF6E3A32),
                     fontSize: 12,
@@ -2453,6 +2529,7 @@ class _TrailheadReturn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final units = UnitsScope.of(context);
     final point = latestPoint;
     final bearing = point == null
         ? null
@@ -2501,7 +2578,7 @@ class _TrailheadReturn extends StatelessWidget {
                       ? 'Waiting for GPS'
                       : atTrailhead
                       ? 'You are at the trailhead'
-                      : '${bearing!.summary} · straight line',
+                      : '${bearing!.summary(units)} · straight line',
                   style: const TextStyle(color: _ink, fontSize: 13),
                 ),
               ],
@@ -2583,6 +2660,7 @@ class _ElevationChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final units = UnitsScope.of(context);
     final elevations = points.map((point) => point.altitude).toList();
     final minimum = elevations.isEmpty
         ? null
@@ -2628,11 +2706,13 @@ class _ElevationChart extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                minimum == null ? 'Waiting for GPS' : '${minimum.round()} m',
+                minimum == null
+                    ? 'Waiting for GPS'
+                    : units.height(minimum),
                 style: TextStyle(color: Color(0xFF969D98), fontSize: 10),
               ),
               Text(
-                maximum == null ? 'Route' : '${maximum.round()} m',
+                maximum == null ? 'Route' : units.height(maximum),
                 style: TextStyle(color: Color(0xFF858B86), fontSize: 10),
               ),
             ],

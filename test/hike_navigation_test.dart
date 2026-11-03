@@ -119,13 +119,13 @@ void main() {
       trailheadLongitude: 0.594,
     );
     expect(bearing.distanceMeters, closeTo(1215, 15));
-    expect(bearing.distanceLabel, '1.2 km');
+    expect(bearing.distanceLabel(), '1.2 km');
     // Standing north-east of the trailhead, so the way back is south-west.
     expect(bearing.directionLabel, 'SW');
-    expect(bearing.summary, '1.2 km · SW');
+    expect(bearing.summary(), '1.2 km · SW');
 
     const close = TrailheadBearing(distanceMeters: 850, bearingDegrees: 200);
-    expect(close.distanceLabel, '850 m');
+    expect(close.distanceLabel(), '850 m');
     expect(close.directionLabel, 'S');
   });
 
@@ -251,8 +251,8 @@ void main() {
       find.text('Back to Bois de la Pique circuit trailhead'),
       findsOneWidget,
     );
-    await tester.ensureVisible(find.textContaining(expected.summary));
-    expect(find.text('${expected.summary} · straight line'), findsOneWidget);
+    await tester.ensureVisible(find.textContaining(expected.summary()));
+    expect(find.text('${expected.summary()} · straight line'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Finish hike'));
     await tester.pumpAndSettle();

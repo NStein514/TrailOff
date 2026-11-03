@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'satellites.dart';
 import 'sky_math.dart';
+import 'units.dart';
 
 final _nightTheme = ThemeData(
   useMaterial3: true,
@@ -139,7 +140,9 @@ class _ConstellationPageState extends State<ConstellationPage>
         _fetchedAt = null;
         _attemptAt = null;
         _locationStatus =
-            '${p.latitude.toStringAsFixed(3)}°, ${p.longitude.toStringAsFixed(3)}° · ±${p.accuracy.round()} m';
+            '${p.latitude.toStringAsFixed(3)}°, '
+            '${p.longitude.toStringAsFixed(3)}° · '
+            '±${UnitsScope.of(context).accuracy(p.accuracy)}';
       });
       if (_active) _startMotion();
       if (_enabled && _active) _loadSatellites();

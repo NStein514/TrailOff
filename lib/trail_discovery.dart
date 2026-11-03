@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -7,14 +8,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'hike_navigation.dart';
 import 'trail_catalogue.dart';
 import 'trail_geometry.dart';
+import 'units.dart';
 
 /// Where the hiker is standing when they ask for nearby routes. The app reads
-/// it from the platform location plugin; tests pass a fixed point.
+/// it from the platform location plugin; tests pass a fixed point. A place
+/// picked from a search carries its own name so the results can say where
+/// they are rather than claiming the hiker is already there.
 class TrailSearchLocation {
-  const TrailSearchLocation(this.latitude, this.longitude);
+  const TrailSearchLocation(this.latitude, this.longitude, {this.name});
 
   final double latitude;
   final double longitude;
+
+  /// Set when the hiker searched for a place instead of using their position.
+  final String? name;
 }
 
 /// A route found near the hiker, with how far its trailhead is from them.
@@ -27,12 +34,8 @@ class TrailMatch {
   final Trail trail;
   final double distanceFromUserMeters;
 
-  String get distanceLabel {
-    if (distanceFromUserMeters < 1000) {
-      return '${distanceFromUserMeters.round()} m away';
-    }
-    return '${(distanceFromUserMeters / 1000).toStringAsFixed(1)} km away';
-  }
+  String distanceLabel([Units units = Units.metric]) =>
+      '${units.shortDistance(distanceFromUserMeters)} away';
 }
 
 class TrailDiscoveryException implements Exception {
@@ -43,6 +46,190 @@ class TrailDiscoveryException implements Exception {
   @override
   String toString() => message;
 }
+
+/// A place the hiker can look up, so routes for a trip can be found before
+/// they travel there.
+class PlaceMatch {
+  const PlaceMatch({
+    required this.name,
+    required this.details,
+    required this.latitude,
+    required this.longitude,
+  });
+
+  final String name;
+
+  /// A short hint at where the place is, e.g. `Auvergne-Rhône-Alpes, France`.
+  final String details;
+  final double latitude;
+  final double longitude;
+
+  /// What the search results call this place.
+  String get label => details.isEmpty ? name : '$name · $details';
+}
+
+class PlaceSearchException implements Exception {
+  const PlaceSearchException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// Looks up a place by name so trails can be found around it.
+abstract interface class PlaceSearchSource {
+  Future<List<PlaceMatch>> search(String query);
+}
+
+/// Photon and Nominatim are both OpenStreetMap searches, so a trip's trails
+/// come from the same data the routes do. Photon is asked first because it
+/// answers browser requests and returns short place names; Nominatim is the
+/// fallback when Photon is unavailable.
+class OpenStreetMapPlaceSource implements PlaceSearchSource {
+  OpenStreetMapPlaceSource({http.Client? client})
+    : _client = client ?? http.Client();
+
+  final http.Client _client;
+
+  static const photonEndpoint = 'https://photon.komoot.io/api/';
+  static const nominatimEndpoint =
+      'https://nominatim.openstreetmap.org/search';
+  static const _userAgent = 'TrailOff/1.0 (Flutter hiking app)';
+  static const _maxResults = 6;
+
+  @override
+  Future<List<PlaceMatch>> search(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.length < 2) return const [];
+    var answered = false;
+    var failure = 'The place search could not reach OpenStreetMap. Check your '
+        'connection.';
+    for (final endpoint in [photonEndpoint, nominatimEndpoint]) {
+      try {
+        final places = await _searchAt(endpoint, trimmed);
+        answered = true;
+        if (places.isNotEmpty) return places;
+      } on PlaceSearchException catch (error) {
+        failure = error.message;
+      } on TimeoutException {
+        failure = 'The place search took too long. Try again.';
+      } catch (_) {
+        // Try the other service; the next failure reports for itself.
+      }
+    }
+    if (!answered) throw PlaceSearchException(failure);
+    return const [];
+  }
+
+  Future<List<PlaceMatch>> _searchAt(String endpoint, String query) async {
+    final isPhoton = endpoint == photonEndpoint;
+    final uri = Uri.parse(endpoint).replace(
+      queryParameters: {
+        'q': query,
+        'limit': '$_maxResults',
+        if (isPhoton) 'lang': 'en',
+        if (!isPhoton) 'format': 'jsonv2',
+        if (!isPhoton) 'addressdetails': '1',
+      },
+    );
+    final response = await _client
+        .get(uri, headers: {'User-Agent': _userAgent})
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw const PlaceSearchException(
+        'The place search is busy right now. Try again in a few minutes.',
+      );
+    }
+    return parsePlaceResults(jsonDecode(response.body));
+  }
+}
+
+/// Reads either a Photon feature collection or a Nominatim result list.
+List<PlaceMatch> parsePlaceResults(Object? json) {
+  if (json is Map<String, dynamic>) {
+    final features = json['features'];
+    if (features is List) return _parsePhotonFeatures(features);
+  }
+  if (json is List) return _parseNominatimResults(json);
+  return const [];
+}
+
+List<PlaceMatch> _parsePhotonFeatures(List features) {
+  final places = <PlaceMatch>[];
+  final seen = <String>{};
+  for (final feature in features) {
+    if (feature is! Map) continue;
+    final properties = feature['properties'];
+    final geometry = feature['geometry'];
+    if (properties is! Map || geometry is! Map) continue;
+    final coordinates = geometry['coordinates'];
+    if (coordinates is! List || coordinates.length < 2) continue;
+    final longitude = coordinates[0];
+    final latitude = coordinates[1];
+    if (latitude is! num || longitude is! num) continue;
+    final name =
+        _text(properties['name']) ??
+        _text(properties['street']) ??
+        _text(properties['city']);
+    if (name == null) continue;
+    final details = <String>[];
+    for (final key in ['city', 'county', 'state', 'country']) {
+      final value = _text(properties[key]);
+      if (value == null || value == name || details.contains(value)) continue;
+      details.add(value);
+    }
+    final place = PlaceMatch(
+      name: name,
+      details: details.take(2).join(', '),
+      latitude: latitude.toDouble(),
+      longitude: longitude.toDouble(),
+    );
+    if (seen.add('${place.name}|${place.details}')) places.add(place);
+  }
+  return places;
+}
+
+List<PlaceMatch> _parseNominatimResults(List results) {
+  final places = <PlaceMatch>[];
+  final seen = <String>{};
+  for (final result in results) {
+    if (result is! Map) continue;
+    final latitude = double.tryParse('${result['lat']}');
+    final longitude = double.tryParse('${result['lon']}');
+    if (latitude == null || longitude == null) continue;
+    final display = _text(result['display_name']);
+    final name =
+        _text(result['name']) ?? display?.split(',').first.trim();
+    if (name == null || name.isEmpty) continue;
+    final details = <String>[];
+    if (display != null) {
+      for (final part in display.split(',').skip(1)) {
+        final value = part.trim();
+        if (value.isEmpty || _looksLikePostcode(value)) continue;
+        details.add(value);
+      }
+    }
+    final place = PlaceMatch(
+      name: name,
+      details: details.take(2).join(', '),
+      latitude: latitude,
+      longitude: longitude,
+    );
+    if (seen.add('${place.name}|${place.details}')) places.add(place);
+  }
+  return places;
+}
+
+String? _text(Object? value) {
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+bool _looksLikePostcode(String value) =>
+    RegExp(r'^[A-Z0-9][A-Z0-9 -]{2,9}$').hasMatch(value) &&
+    value.contains(RegExp(r'[0-9]'));
 
 /// Finds hiking routes around a point. The live implementation reads
 /// OpenStreetMap, so discovery is not tied to the bundled sample region.
@@ -169,6 +356,12 @@ class OpenStreetMapTrailSource implements TrailDiscoverySource {
   static const _userAgent = 'TrailOff/1.0 (Flutter hiking app)';
   static const _maxRoutes = 12;
 
+  /// How long one instance gets before it is treated as unavailable, and how
+  /// long the first instance is given alone before the next is started beside
+  /// it. Together they cap a failed search at a few seconds per ring.
+  static const _attemptTimeout = Duration(seconds: 12);
+  static const _endpointStagger = Duration(milliseconds: 2500);
+
   /// Samples per route, and routes per elevation request. The elevation service
   /// accepts up to 100 coordinates per call and rate-limits rapid bursts, so
   /// grouping routes keeps a search to a handful of requests.
@@ -264,35 +457,51 @@ class OpenStreetMapTrailSource implements TrailDiscoverySource {
     return parseOverpassRoutes(json);
   }
 
-  /// Runs one Overpass query, trying each public instance until one answers.
+  /// Runs one Overpass query against the public instances.
+  ///
+  /// The instances are started a couple of seconds apart and the first answer
+  /// wins, so a mirror that is overloaded or refusing connections costs a few
+  /// seconds instead of the whole timeout: waiting for three quiet 25-second
+  /// timeouts in turn left hikers staring at a spinner for over a minute.
   Future<Map<String, dynamic>> _query(String query) async {
-    http.Response? response;
-    var reachedServer = false;
-    for (final endpoint in overpassEndpoints) {
-      try {
-        final attempt = await _client
-            .post(
-              Uri.parse(endpoint),
-              headers: {
-                'User-Agent': _userAgent,
-                'Content-Type': 'application/x-www-form-urlencoded',
-              },
-              body: {'data': query},
-            )
-            .timeout(const Duration(seconds: 25));
-        reachedServer = true;
-        if (attempt.statusCode == 200) {
-          response = attempt;
-          break;
+    final answer = Completer<({http.Response? response, bool answered})>();
+    final timers = <Timer>[];
+    var launched = 0;
+    var finished = 0;
+    var answered = false;
+
+    void launch() {
+      if (launched >= overpassEndpoints.length || answer.isCompleted) return;
+      final endpoint = overpassEndpoints[launched++];
+      _attemptOverpass(endpoint, query).then((attempt) {
+        answered = answered || attempt.answered;
+        if (attempt.response != null) {
+          if (!answer.isCompleted) {
+            answer.complete((response: attempt.response, answered: true));
+          }
+          return;
         }
-      } catch (_) {
-        // Try the next instance: a full queue answers at once, an overloaded
-        // one just times out.
+        finished++;
+        if (finished == overpassEndpoints.length && !answer.isCompleted) {
+          answer.complete((response: null, answered: answered));
+        }
+        // A refused or failed instance hands over to the next one at once.
+        launch();
+      });
+      if (launched < overpassEndpoints.length) {
+        timers.add(Timer(_endpointStagger, launch));
       }
     }
+
+    launch();
+    final result = await answer.future;
+    for (final timer in timers) {
+      timer.cancel();
+    }
+    final response = result.response;
     if (response == null) {
       throw TrailDiscoveryException(
-        reachedServer
+        result.answered
             ? 'OpenStreetMap is busy right now. Try again in a few minutes.'
             : 'Trail search could not reach OpenStreetMap. Check your connection.',
       );
@@ -311,6 +520,33 @@ class OpenStreetMapTrailSource implements TrailDiscoverySource {
       );
     }
     return decoded;
+  }
+
+  /// One Overpass instance. A busy instance answers with a non-200 status, and
+  /// an unreachable one throws, so the caller needs to tell those apart: only
+  /// the first case means OpenStreetMap is up and simply overloaded.
+  Future<({http.Response? response, bool answered})> _attemptOverpass(
+    String endpoint,
+    String query,
+  ) async {
+    try {
+      final attempt = await _client
+          .post(
+            Uri.parse(endpoint),
+            headers: {
+              'User-Agent': _userAgent,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: {'data': query},
+          )
+          .timeout(_attemptTimeout);
+      return (
+        response: attempt.statusCode == 200 ? attempt : null,
+        answered: true,
+      );
+    } catch (_) {
+      return (response: null, answered: false);
+    }
   }
 
   /// Elevation is optional: when the elevation service is unavailable the route

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'route_recommendations.dart';
 import 'trail_catalogue.dart';
+import 'units.dart';
 
 class PackingItem {
   const PackingItem({
@@ -44,6 +45,7 @@ List<PackingItem> packingChecklistFor({
   required HikingAbility ability,
   required TrailConditions conditions,
   Trail? trail,
+  Units units = Units.metric,
 }) {
   final items = <PackingItem>[
     if (trail == null)
@@ -71,8 +73,9 @@ List<PackingItem> packingChecklistFor({
         id: 'extra-food',
         label: 'Extra food',
         reason: trail.elevationKnown
-            ? '${trail.distanceLabel} and ${trail.ascentLabel} needs more than a snack'
-            : '${trail.distanceLabel} is a long day out',
+            ? '${trail.distanceLabel(units)} and ${trail.ascentLabel(units)} '
+                  'needs more than a snack'
+            : '${trail.distanceLabel(units)} is a long day out',
       ),
     const PackingItem(
       id: 'navigation',
@@ -100,7 +103,8 @@ List<PackingItem> packingChecklistFor({
         id: 'insulation',
         label: 'Insulating layer',
         reason:
-            'It can be much colder at ${trail.highestPointMeters} m than in the valley',
+            'It can be much colder at '
+            '${units.height(trail.highestPointMeters)} than in the valley',
       ),
   ];
 
@@ -192,10 +196,12 @@ class _PackingChecklistState extends State<PackingChecklist> {
   @override
   Widget build(BuildContext context) {
     final trail = widget.trail;
+    final units = UnitsScope.of(context);
     final items = packingChecklistFor(
       ability: widget.ability,
       conditions: widget.conditions,
       trail: trail,
+      units: units,
     );
     final checkedCount = items
         .where((item) => _checkedItems.contains(item.id))
@@ -239,8 +245,9 @@ class _PackingChecklistState extends State<PackingChecklist> {
           Text(
             trail == null
                 ? 'Suggested essentials · check off what you have packed'
-                : 'Tailored to ${trail.name} · ${trail.distanceLabel}'
-                      '${trail.elevationKnown ? ' · ${trail.ascentLabel}' : ''}',
+                : 'Tailored to ${trail.name} · '
+                      '${trail.distanceLabel(units)}'
+                      '${trail.elevationKnown ? ' · ${trail.ascentLabel(units)}' : ''}',
             style: const TextStyle(color: Color(0xFF777E79), fontSize: 11),
           ),
           const SizedBox(height: 8),

@@ -180,6 +180,7 @@ class _FakeDiscoverySource implements TrailDiscoverySource {
   final List<TrailMatch> matches;
   double? lastRadiusMeters;
   double? lastLatitude;
+  double? lastLongitude;
 
   @override
   Future<List<TrailMatch>> findNearby({
@@ -188,6 +189,7 @@ class _FakeDiscoverySource implements TrailDiscoverySource {
     required double radiusMeters,
   }) async {
     lastLatitude = latitude;
+    lastLongitude = longitude;
     lastRadiusMeters = radiusMeters;
     return matches;
   }
@@ -356,6 +358,110 @@ void main() {
     expect(matches.first.trail.highestPointMeters, 1030);
   });
 
+  test('photon results become readable places', () {
+    final places = parsePlaceResults({
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'properties': {
+            'name': 'Chamonix-Mont-Blanc',
+            'county': 'Upper Savoy',
+            'state': 'Auvergne-Rhône-Alpes',
+            'country': 'France',
+          },
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [6.87, 45.923],
+          },
+        },
+        {
+          'type': 'Feature',
+          'properties': {'name': 'Chamonix', 'country': 'South Africa'},
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [19.13, -33.90],
+          },
+        },
+        {
+          'type': 'Feature',
+          'properties': {'name': 'Broken'},
+        },
+      ],
+    });
+
+    expect(places, hasLength(2));
+    expect(places.first.name, 'Chamonix-Mont-Blanc');
+    expect(places.first.details, 'Upper Savoy, Auvergne-Rhône-Alpes');
+    expect(places.first.latitude, closeTo(45.923, 0.0001));
+    expect(places.first.longitude, closeTo(6.87, 0.0001));
+    expect(places.last.details, 'South Africa');
+    expect(places.last.label, 'Chamonix · South Africa');
+  });
+
+  test('nominatim results become readable places', () {
+    final places = parsePlaceResults([
+      {
+        'lat': '45.9230969',
+        'lon': '6.8700009',
+        'name': 'Chamonix-Mont-Blanc',
+        'display_name':
+            'Chamonix-Mont-Blanc, Bonneville, Haute-Savoie, 74400, France',
+      },
+      {'lat': 'not a number', 'lon': '6.87', 'name': 'Nowhere'},
+    ]);
+
+    expect(places, hasLength(1));
+    expect(places.single.name, 'Chamonix-Mont-Blanc');
+    expect(places.single.details, 'Bonneville, Haute-Savoie');
+    expect(places.single.latitude, closeTo(45.923, 0.001));
+  });
+
+  test('place search asks photon first and falls back to nominatim', () async {
+    final hosts = <String>[];
+    final client = MockClient((request) async {
+      hosts.add(request.url.host);
+      if (request.url.host == 'photon.komoot.io') {
+        return http.Response('busy', 503);
+      }
+      return http.Response(
+        jsonEncode([
+          {
+            'lat': '45.9230969',
+            'lon': '6.8700009',
+            'name': 'Chamonix-Mont-Blanc',
+            'display_name': 'Chamonix-Mont-Blanc, Haute-Savoie, France',
+          },
+        ]),
+        200,
+      );
+    });
+
+    final places = await OpenStreetMapPlaceSource(
+      client: client,
+    ).search('chamonix');
+
+    expect(hosts, ['photon.komoot.io', 'nominatim.openstreetmap.org']);
+    expect(places.single.name, 'Chamonix-Mont-Blanc');
+  });
+
+  test('a place search that cannot reach either service says so', () async {
+    final client = MockClient(
+      (request) async => http.Response('busy', 503),
+    );
+
+    await expectLater(
+      OpenStreetMapPlaceSource(client: client).search('chamonix'),
+      throwsA(
+        isA<PlaceSearchException>().having(
+          (error) => error.message,
+          'message',
+          contains('busy'),
+        ),
+      ),
+    );
+  });
+
   test('a trail survives a round trip through the disk format', () {
     final trail = Trail.fromJson(
       jsonDecode(jsonEncode(_foundTrail(elevationKnown: false).toJson()))
@@ -365,7 +471,7 @@ void main() {
     expect(trail.id, 'osm-relation-1');
     expect(trail.name, 'Crêt du Midi loop');
     expect(trail.elevationKnown, isFalse);
-    expect(trail.ascentLabel, '—');
+    expect(trail.ascentLabel(), '—');
     expect(trail.route, hasLength(4));
     expect(trail.route.first.latitude, 45.91);
     expect(trail.trailheadLongitude, 6.86);
@@ -450,7 +556,9 @@ void main() {
     expect(find.text('Trails near you'), findsOneWidget);
     expect(find.textContaining('2.5 km away'), findsOneWidget);
     expect(
-      find.text('1 route within 25 km, from OpenStreetMap.'),
+      find.text(
+        '1 route within 25 km of your location, from OpenStreetMap.',
+      ),
       findsOneWidget,
     );
     expect(discoveredStore.trails.single.id, 'osm-relation-1');
@@ -533,6 +641,120 @@ void main() {
     expect(find.text('Crêt du Midi loop'), findsWidgets);
   });
 
+  testWidgets('a place search finds trails for a trip ahead of time', (
+    WidgetTester tester,
+  ) async {
+    final places = _FakePlaceSource([
+      const PlaceMatch(
+        name: 'Chamonix-Mont-Blanc',
+        details: 'Auvergne-Rhône-Alpes, France',
+        latitude: 45.923,
+        longitude: 6.87,
+      ),
+    ]);
+    final source = _FakeDiscoverySource([
+      TrailMatch(trail: _foundTrail(), distanceFromUserMeters: 2500),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TrailCataloguePage(
+          planStore: _MemoryPlanStore(),
+          discoverySource: source,
+          discoveredTrailStore: _MemoryDiscoveredTrailStore(),
+          placeSearchSource: places,
+          searchLocation: const TrailSearchLocation(42.8, 0.6),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('place-search-field')),
+      'chamonix',
+    );
+    await tester.tap(find.byKey(const Key('place-search-submit')));
+    await tester.pumpAndSettle();
+
+    expect(places.lastQuery, 'chamonix');
+    expect(find.text('Chamonix-Mont-Blanc'), findsOneWidget);
+    expect(find.text('Auvergne-Rhône-Alpes, France'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('place-result-0')));
+    await tester.pumpAndSettle();
+
+    // The search runs where the trip is, not where the hiker is standing.
+    expect(source.lastLatitude, 45.923);
+    expect(source.lastLongitude, 6.87);
+    expect(find.text('Trails near Chamonix-Mont-Blanc'), findsOneWidget);
+    expect(
+      find.text(
+        'Within 25 km of Chamonix-Mont-Blanc · 1 routes from OpenStreetMap',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        '1 route within 25 km of Chamonix-Mont-Blanc, from OpenStreetMap.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a place search with no match says so', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TrailCataloguePage(
+          planStore: _MemoryPlanStore(),
+          placeSearchSource: _FakePlaceSource(const []),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('place-search-field')),
+      'nowhere at all',
+    );
+    await tester.tap(find.byKey(const Key('place-search-submit')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('No place matched “nowhere at all”'),
+      findsOneWidget,
+    );
+    // The sample routes stay on screen while the hiker corrects the name.
+    expect(find.text('Routes near Luchon'), findsOneWidget);
+  });
+
+  testWidgets('a place search that fails reports it', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TrailCataloguePage(
+          planStore: _MemoryPlanStore(),
+          placeSearchSource: _FailingPlaceSource(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('place-search-field')),
+      'chamonix',
+    );
+    await tester.tap(find.byKey(const Key('place-search-submit')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('could not reach OpenStreetMap'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('a failed search says so and keeps the sample routes', (
     WidgetTester tester,
   ) async {
@@ -557,7 +779,85 @@ void main() {
     );
     expect(find.text('Routes near Luchon'), findsOneWidget);
     expect(find.text('PLANNED ROUTE'), findsNothing);
+    expect(find.byKey(const Key('discovery-retry')), findsOneWidget);
   });
+
+  testWidgets('a failed search can be tried again without retyping', (
+    WidgetTester tester,
+  ) async {
+    final source = _FlakyDiscoverySource(
+      TrailMatch(trail: _foundTrail(), distanceFromUserMeters: 900),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TrailCataloguePage(
+          planStore: _MemoryPlanStore(),
+          discoverySource: source,
+          discoveredTrailStore: _MemoryDiscoveredTrailStore(),
+          placeSearchSource: _FakePlaceSource(const []),
+          searchLocation: const TrailSearchLocation(48.85, 2.35),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('find-trails-nearby')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('could not reach'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('discovery-retry')));
+    await tester.pumpAndSettle();
+
+    expect(source.searches, 2);
+    expect(find.textContaining('could not reach'), findsNothing);
+    expect(find.text('Trails near you'), findsOneWidget);
+  });
+}
+
+class _FakePlaceSource implements PlaceSearchSource {
+  _FakePlaceSource(this.places);
+
+  final List<PlaceMatch> places;
+  String? lastQuery;
+
+  @override
+  Future<List<PlaceMatch>> search(String query) async {
+    lastQuery = query;
+    return places;
+  }
+}
+
+class _FailingPlaceSource implements PlaceSearchSource {
+  @override
+  Future<List<PlaceMatch>> search(String query) async {
+    throw const PlaceSearchException(
+      'The place search could not reach OpenStreetMap. Check your connection.',
+    );
+  }
+}
+
+/// Fails once, the way a busy mirror does, then answers on the retry.
+class _FlakyDiscoverySource implements TrailDiscoverySource {
+  _FlakyDiscoverySource(this.match);
+
+  final TrailMatch match;
+  int searches = 0;
+
+  @override
+  Future<List<TrailMatch>> findNearby({
+    required double latitude,
+    required double longitude,
+    required double radiusMeters,
+  }) async {
+    searches++;
+    if (searches == 1) {
+      throw const TrailDiscoveryException(
+        'Trail search could not reach OpenStreetMap. Check your connection.',
+      );
+    }
+    return [match];
+  }
 }
 
 class _FailingDiscoverySource implements TrailDiscoverySource {

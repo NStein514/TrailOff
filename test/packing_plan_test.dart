@@ -61,7 +61,7 @@ void main() {
     expect(items.first.reason, 'About 3 L for 5 h 30 on the trail');
     expect(
       items.firstWhere((item) => item.id == 'extra-food').reason,
-      '12.4 km and +1120 m needs more than a snack',
+      '12.4 km and +1,120 m needs more than a snack',
     );
   });
 
@@ -93,7 +93,7 @@ void main() {
     await _pumpChecklist(tester, trail: _trail('tour-du-portillon'));
 
     expect(
-      find.text('Tailored to Lac du Portillon loop · 12.4 km · +1120 m'),
+      find.text('Tailored to Lac du Portillon loop · 12.4 km · +1,120 m'),
       findsOneWidget,
     );
     expect(find.text('About 3 L for 5 h 30 on the trail'), findsOneWidget);

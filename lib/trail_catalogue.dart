@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'route_recommendations.dart';
 import 'trail_geometry.dart';
+import 'units.dart';
 
 /// How a catalogue route compares with the hiker's ability on a given day.
 enum TrailFit {
@@ -55,10 +56,14 @@ class Trail {
   /// estimated, so the fit and the packing list do not pretend they are flat.
   final bool elevationKnown;
 
-  String get distanceLabel =>
-      '${(distanceMeters / 1000).toStringAsFixed(1)} km';
+  String distanceLabel([Units units = Units.metric]) =>
+      units.distance(distanceMeters);
 
-  String get ascentLabel => elevationKnown ? '+${ascentMeters.round()} m' : '—';
+  String ascentLabel([Units units = Units.metric]) =>
+      elevationKnown ? units.ascent(ascentMeters) : '—';
+
+  String highPointLabel([Units units = Units.metric]) =>
+      units.height(highestPointMeters);
 
   Map<String, Object?> toJson() => {
     'id': id,

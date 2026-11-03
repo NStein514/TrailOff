@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'units.dart';
+
 const _earthRadiusMeters = 6371000.0;
 
 double _radians(double degrees) => degrees * math.pi / 180;
@@ -56,13 +58,13 @@ class TrailheadBearing {
   final double distanceMeters;
   final double bearingDegrees;
 
-  String get distanceLabel => distanceMeters < 1000
-      ? '${distanceMeters.round()} m'
-      : '${(distanceMeters / 1000).toStringAsFixed(1)} km';
+  String distanceLabel([Units units = Units.metric]) =>
+      units.shortDistance(distanceMeters);
 
   String get directionLabel => compassPoint(bearingDegrees);
 
-  String get summary => '$distanceLabel · $directionLabel';
+  String summary([Units units = Units.metric]) =>
+      '${distanceLabel(units)} · $directionLabel';
 }
 
 /// Distance and direction from the current position back to the trailhead.
