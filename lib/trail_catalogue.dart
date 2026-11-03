@@ -28,6 +28,7 @@ class Trail {
     required this.trailheadLatitude,
     required this.trailheadLongitude,
     required this.route,
+    this.elevationKnown = true,
   });
 
   final String id;
@@ -50,10 +51,56 @@ class Trail {
   final String summary;
   final List<String> notes;
 
+  /// False for routes found online whose ascent and high point could not be
+  /// estimated, so the fit and the packing list do not pretend they are flat.
+  final bool elevationKnown;
+
   String get distanceLabel =>
       '${(distanceMeters / 1000).toStringAsFixed(1)} km';
 
-  String get ascentLabel => '+${ascentMeters.round()} m';
+  String get ascentLabel => elevationKnown ? '+${ascentMeters.round()} m' : '—';
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'area': area,
+    'distanceMeters': distanceMeters,
+    'ascentMeters': ascentMeters,
+    'durationMinutes': durationMinutes,
+    'highestPointMeters': highestPointMeters,
+    'elevationKnown': elevationKnown,
+    'summary': summary,
+    'notes': notes,
+    'trailheadLatitude': trailheadLatitude,
+    'trailheadLongitude': trailheadLongitude,
+    'route': [
+      for (final point in route) [point.latitude, point.longitude],
+    ],
+  };
+
+  factory Trail.fromJson(Map<String, dynamic> json) => Trail(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    area: json['area'] as String? ?? '',
+    distanceMeters: (json['distanceMeters'] as num).toDouble(),
+    ascentMeters: (json['ascentMeters'] as num?)?.toDouble() ?? 0,
+    durationMinutes: (json['durationMinutes'] as num?)?.toInt() ?? 0,
+    highestPointMeters: (json['highestPointMeters'] as num?)?.toInt() ?? 0,
+    elevationKnown: json['elevationKnown'] as bool? ?? true,
+    summary: json['summary'] as String? ?? '',
+    notes: [
+      for (final note in json['notes'] as List<dynamic>? ?? const []) note as String,
+    ],
+    trailheadLatitude: (json['trailheadLatitude'] as num).toDouble(),
+    trailheadLongitude: (json['trailheadLongitude'] as num).toDouble(),
+    route: [
+      for (final point in json['route'] as List<dynamic>? ?? const [])
+        TrailPoint(
+          ((point as List<dynamic>)[0] as num).toDouble(),
+          (point[1] as num).toDouble(),
+        ),
+    ],
+  );
 
   String get durationLabel {
     final hours = durationMinutes ~/ 60;
@@ -87,10 +134,10 @@ double trailLoad({
 }) {
   final distanceLimit = ability.maxDistanceMeters * conditions.capacityFactor;
   final ascentLimit = ability.maxAscentMeters * conditions.capacityFactor;
-  return math.max(
-    trail.distanceMeters / distanceLimit,
-    trail.ascentMeters / ascentLimit,
-  );
+  final ascentLoad = trail.elevationKnown
+      ? trail.ascentMeters / ascentLimit
+      : 0.0;
+  return math.max(trail.distanceMeters / distanceLimit, ascentLoad);
 }
 
 TrailFit trailFit({

@@ -4,7 +4,7 @@ TrailOff helps people explore outdoors: discover trails, download offline maps, 
 
 ## Product scope
 
-- Discover trails and match them to the hiker. *(Implemented: sample catalogue with ability and condition fit.)*
+- Discover trails and match them to the hiker. *(Implemented: bundled sample routes, plus a live OpenStreetMap search around the hiker's location, with ability and condition fit.)*
 - Recommend routes based on hiker ability and trail conditions. *(Implemented: ranks saved hikes against ability and conditions.)*
 - Generate practical packing checklists for the selected route and conditions. *(Implemented: built from the planned route's distance, ascent, walking time and high point, plus ability and conditions.)*
 - Answer questions grounded in downloaded trail information. *(Implemented: offline retrieval that quotes a downloaded guide section.)*
@@ -12,15 +12,17 @@ TrailOff helps people explore outdoors: discover trails, download offline maps, 
 
 ## Trail discovery
 
-Open **Discover trails** from the dashboard to browse the region's routes. Each card shows distance, ascent, time and a fit badge: *Fits today*, *A stretch*, or *Too demanding today*. Fit is the larger of distance and ascent measured against the selected ability's limits, reduced by the selected conditions. Changing ability or conditions re-sorts the list and updates every badge. Tapping a route opens details with the fit reasoning and route-specific notes.
+Open **Discover trails** from the dashboard. It opens on the bundled sample routes around Luchon, and **Find trails near me** searches the area around the hiker instead — 10, 25 or 50 km, from the device's location — so discovery is not tied to the sample region. Each card shows distance, ascent, time and a fit badge: *Fits today*, *A stretch*, or *Too demanding today*. Fit is the larger of distance and ascent measured against the selected ability's limits, reduced by the selected conditions. Changing ability or conditions re-sorts the list and updates every badge. Tapping a route opens details with the fit reasoning and route-specific notes.
 
-The catalogue is sample data bundled with the app, and fit is judged only from the hiker's own settings. It does not know about closures, permissions, or the weather on the day.
+Live results come from OpenStreetMap hiking route relations within the chosen radius, listed with the distance from the hiker to the trailhead. A relation supplies the name, reference, description and route line; the length is measured from that line, walking time is estimated at 4 km/h plus a minute per 10 m of climbing, and ascent and high point come from sampled elevations. The search widens in steps (5 km, 15 km, then the chosen radius) until it has enough routes, so nearby trails come first, and the elevation samples for several routes travel in one request to stay clear of the service's rate limit. When the elevation service cannot be reached those two figures are marked unknown and only distance counts towards fit. Found routes are kept on the device, so a route planned from a live search still drives the dashboard map and offline download after a restart.
+
+Limits: the live search needs a network connection and location permission, and it calls public OpenStreetMap services (Overpass for routes, Open-Meteo for elevations) that can be busy or rate-limited — a production build should query its own cached copy rather than sending every device to them. The route data is crowd-sourced, so it can be incomplete, out of date or missing access restrictions, and the line is a mapped relation rather than a surveyed track. The bundled sample catalogue remains the offline fallback, and fit is judged only from the hiker's own settings: the app does not know about closures, permissions, or the weather on the day.
 
 ## Planning a trail
 
 Open a route and choose **Plan this trail** to make it the current objective. The plan is stored on the device and shown on the dashboard as a **Your plan** card with its distance, ascent, time and fit badge. Because the badge is recalculated from the dashboard's ability and conditions, changing those settings immediately shows whether the plan still suits the day. The catalogue marks the planned route and the same sheet offers **Remove from plan**; the dashboard card can clear it too.
 
-Planning also drives the map and the offline download. Each catalogue trail carries a route line, so the dashboard map frames and draws the planned route — as a MapLibre line on device, and as a painted trail with a trailhead marker in the no-device fallback, where the tour labels and demo route are hidden so they can't be mistaken for another trail. The map card labels the plan. The record tab's live track is projected in the same frame as the planned line, so you can see how far your walk sits from it.
+Planning also drives the map and the offline download. Each catalogue trail carries a route line, so the dashboard map frames and draws the planned route — as a MapLibre line in the Android, iOS and web builds, and as a painted trail with a trailhead marker in the fallback used where the map plugin has no implementation. The painted map's place names, pins and north chip are decorations drawn at fixed positions, so they appear only in that fallback and never over the real map. The map card labels the plan. While recording, the live track is drawn as its own line over the planned line and the latest fix is marked on it, so you can see how far your walk sits from the route.
 
 The offline download saves the planned route's bounding box widened by 1.5 km on every side, so the saved tiles cover the line the map draws, and reports the saved area by name. Each trail has its own saved area, so the button shows *Map saved* only for the plan currently selected and re-checks whenever the plan changes.
 

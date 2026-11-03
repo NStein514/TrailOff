@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import 'route_recommendations.dart';
 import 'trail_catalogue.dart';
+import 'trail_discovery.dart';
 import 'trail_fit_badge.dart';
 import 'trail_plan.dart';
 
@@ -16,12 +20,26 @@ class TrailCataloguePage extends StatefulWidget {
     this.conditions = TrailConditions.dry,
     this.trails = sampleTrailCatalogue,
     this.planStore,
+    this.discoverySource,
+    this.discoveredTrailStore,
+    this.searchLocation,
   });
 
   final HikingAbility ability;
   final TrailConditions conditions;
   final List<Trail> trails;
   final TrailPlanStore? planStore;
+
+  /// Source of routes around the hiker. Defaults to OpenStreetMap when the
+  /// hiker asks for trails near them.
+  final TrailDiscoverySource? discoverySource;
+
+  /// Keeps trails found online so a plan made from them still resolves later.
+  final DiscoveredTrailStore? discoveredTrailStore;
+
+  /// Where to search from. Left null in the app, where the platform location
+  /// plugin is used; tests pass a fixed point.
+  final TrailSearchLocation? searchLocation;
 
   @override
   State<TrailCataloguePage> createState() => _TrailCataloguePageState();
@@ -31,13 +49,127 @@ class _TrailCataloguePageState extends State<TrailCataloguePage> {
   late HikingAbility _ability = widget.ability;
   late TrailConditions _conditions = widget.conditions;
   late final TrailPlanStore _planStore;
+  late final TrailDiscoverySource _discoverySource =
+      widget.discoverySource ?? OpenStreetMapTrailSource();
   String? _plannedTrailId;
+
+  /// The routes on screen: the bundled sample until the hiker searches, then
+  /// whatever was found around them.
+  late List<Trail> _trails = widget.trails;
+  Map<String, TrailMatch> _matches = const {};
+  bool _searching = false;
+  String? _searchNote;
+  double _radiusKm = 25;
+
+  bool get _showingFoundTrails => _matches.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
     _planStore = widget.planStore ?? SharedPreferencesTrailPlanStore();
     _loadPlan();
+  }
+
+  Future<void> _findNearby() async {
+    if (_searching) return;
+    setState(() {
+      _searching = true;
+      _searchNote = null;
+    });
+    try {
+      // A location fix that never arrives must not leave the search spinning.
+      final location =
+          widget.searchLocation ??
+          await _currentLocation().timeout(const Duration(seconds: 30));
+      final matches = await _discoverySource.findNearby(
+        latitude: location.latitude,
+        longitude: location.longitude,
+        radiusMeters: _radiusKm * 1000,
+      );
+      if (!mounted) return;
+      if (matches.isEmpty) {
+        setState(() {
+          _searching = false;
+          _matches = const {};
+          _trails = widget.trails;
+          _searchNote =
+              'No named hiking routes within ${_radiusKm.round()} km. '
+              'Showing the bundled sample routes.';
+        });
+        return;
+      }
+      final trails = [for (final match in matches) match.trail];
+      setState(() {
+        _searching = false;
+        _matches = {for (final match in matches) match.trail.id: match};
+        _trails = trails;
+        _searchNote =
+            '${trails.length} ${trails.length == 1 ? 'route' : 'routes'} '
+            'within ${_radiusKm.round()} km, from OpenStreetMap.';
+      });
+      await _remember(trails);
+    } on TrailDiscoveryException catch (error) {
+      _reportSearchFailure(error.message);
+    } on LocationServiceDisabledException {
+      _reportSearchFailure('Turn on location services to find trails near you.');
+    } on TimeoutException {
+      _reportSearchFailure(
+        'Finding your location took too long. Try again somewhere with a '
+        'clear view of the sky.',
+      );
+    } catch (error) {
+      _reportSearchFailure('The trail search failed: $error');
+    }
+  }
+
+  void _reportSearchFailure(String message) {
+    if (!mounted) return;
+    setState(() {
+      _searching = false;
+      _matches = const {};
+      _trails = widget.trails;
+      _searchNote = '$message Showing the bundled sample routes.';
+    });
+  }
+
+  /// Keeps found trails on the device, because a plan stores only their id.
+  Future<void> _remember(List<Trail> trails) async {
+    final store = widget.discoveredTrailStore;
+    if (store == null) return;
+    try {
+      await store.remember(trails);
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+        () => _searchNote =
+            'Routes found, but they could not be saved for the next launch.',
+      );
+    }
+  }
+
+  Future<TrailSearchLocation> _currentLocation() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      throw const TrailDiscoveryException(
+        'Turn on location services to find trails near you.',
+      );
+    }
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      throw const TrailDiscoveryException(
+        'Location permission is needed to find trails near you.',
+      );
+    }
+    final position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.medium,
+        timeLimit: Duration(seconds: 20),
+      ),
+    );
+    return TrailSearchLocation(position.latitude, position.longitude);
   }
 
   Future<void> _loadPlan() async {
@@ -62,7 +194,7 @@ class _TrailCataloguePageState extends State<TrailCataloguePage> {
   @override
   Widget build(BuildContext context) {
     final suggestions = suggestTrails(
-      trails: widget.trails,
+      trails: _trails,
       ability: _ability,
       conditions: _conditions,
     );
@@ -86,9 +218,9 @@ class _TrailCataloguePageState extends State<TrailCataloguePage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
         children: [
-          const Text(
-            'Routes near Luchon',
-            style: TextStyle(
+          Text(
+            _showingFoundTrails ? 'Trails near you' : 'Routes near Luchon',
+            style: const TextStyle(
               color: _ink,
               fontFamily: 'Georgia',
               fontSize: 26,
@@ -99,9 +231,66 @@ class _TrailCataloguePageState extends State<TrailCataloguePage> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Sample catalogue · ${widget.trails.length} routes',
+            _showingFoundTrails
+                ? 'Within ${_radiusKm.round()} km of your location · '
+                      '${_trails.length} routes from OpenStreetMap'
+                : 'Sample catalogue · ${_trails.length} routes',
             style: const TextStyle(color: Color(0xFF777E79), fontSize: 11),
           ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  key: const Key('find-trails-nearby'),
+                  onPressed: _searching ? null : _findNearby,
+                  icon: _searching
+                      ? const SizedBox(
+                          width: 15,
+                          height: 15,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.my_location_rounded, size: 18),
+                  label: Text(
+                    _searching ? 'Searching…' : 'Find trails near me',
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _forest,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              DropdownButton<double>(
+                key: const Key('discovery-radius'),
+                value: _radiusKm,
+                underline: const SizedBox.shrink(),
+                borderRadius: BorderRadius.circular(12),
+                items: const [
+                  DropdownMenuItem(value: 10, child: Text('10 km')),
+                  DropdownMenuItem(value: 25, child: Text('25 km')),
+                  DropdownMenuItem(value: 50, child: Text('50 km')),
+                ],
+                onChanged: _searching
+                    ? null
+                    : (value) {
+                        if (value != null) setState(() => _radiusKm = value);
+                      },
+              ),
+            ],
+          ),
+          if (_searchNote != null) ...[
+            const SizedBox(height: 7),
+            Text(
+              _searchNote!,
+              key: const Key('discovery-note'),
+              style: const TextStyle(
+                color: Color(0xFF68716B),
+                fontSize: 11,
+                height: 1.3,
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
@@ -163,7 +352,7 @@ class _TrailCataloguePageState extends State<TrailCataloguePage> {
           ),
           const SizedBox(height: 12),
           Text(
-            '$suitable of ${widget.trails.length} routes fit your level in '
+            '$suitable of ${_trails.length} routes fit your level in '
             '${_conditions.label.toLowerCase()} conditions.',
             style: const TextStyle(
               color: Color(0xFF68716B),
@@ -176,14 +365,19 @@ class _TrailCataloguePageState extends State<TrailCataloguePage> {
             _TrailTile(
               suggestion: suggestion,
               planned: suggestion.trail.id == _plannedTrailId,
+              distanceLabel: _matches[suggestion.trail.id]?.distanceLabel,
               onTap: () => _showDetails(suggestion),
             ),
           const SizedBox(height: 4),
-          const Text(
-            'Sample catalogue bundled with TrailOff. Distances, access and '
-            'current conditions must be checked with local sources before you '
-            'rely on them.',
-            style: TextStyle(color: Color(0xFF858B86), fontSize: 10),
+          Text(
+            _showingFoundTrails
+                ? 'Routes from OpenStreetMap hiking relations. Distance, ascent '
+                      'and walking time are estimates; check access, closures and '
+                      'current conditions with local sources.'
+                : 'Sample catalogue bundled with TrailOff. Distances, access and '
+                      'current conditions must be checked with local sources '
+                      'before you rely on them.',
+            style: const TextStyle(color: Color(0xFF858B86), fontSize: 10),
           ),
         ],
       ),
@@ -232,11 +426,15 @@ class _TrailTile extends StatelessWidget {
     required this.suggestion,
     required this.planned,
     required this.onTap,
+    this.distanceLabel,
   });
 
   final TrailSuggestion suggestion;
   final bool planned;
   final VoidCallback onTap;
+
+  /// How far the trailhead is from the hiker, for routes found on the day.
+  final String? distanceLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -282,7 +480,9 @@ class _TrailTile extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            trail.area,
+                            distanceLabel == null
+                                ? trail.area
+                                : '${trail.area} · $distanceLabel',
                             style: const TextStyle(
                               color: Color(0xFF777E79),
                               fontSize: 11,
@@ -297,8 +497,11 @@ class _TrailTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 9),
                 Text(
-                  '${trail.distanceLabel} · ${trail.ascentLabel} ascent · '
-                  '${trail.durationLabel}',
+                  trail.elevationKnown
+                      ? '${trail.distanceLabel} · ${trail.ascentLabel} ascent · '
+                            '${trail.durationLabel}'
+                      : '${trail.distanceLabel} · ascent unknown · '
+                            '${trail.durationLabel}',
                   style: const TextStyle(
                     color: Color(0xFF5F6862),
                     fontSize: 12,
@@ -405,7 +608,10 @@ class _TrailDetails extends StatelessWidget {
             Row(
               children: [
                 _DetailStat(label: 'Distance', value: trail.distanceLabel),
-                _DetailStat(label: 'Ascent', value: trail.ascentLabel),
+                _DetailStat(
+                  label: 'Ascent',
+                  value: trail.elevationKnown ? trail.ascentLabel : 'Unknown',
+                ),
               ],
             ),
             const SizedBox(height: 10),
@@ -414,7 +620,9 @@ class _TrailDetails extends StatelessWidget {
                 _DetailStat(label: 'Time', value: trail.durationLabel),
                 _DetailStat(
                   label: 'High point',
-                  value: '${trail.highestPointMeters} m',
+                  value: trail.elevationKnown
+                      ? '${trail.highestPointMeters} m'
+                      : 'Unknown',
                 ),
               ],
             ),

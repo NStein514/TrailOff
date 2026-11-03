@@ -17,6 +17,7 @@ import 'route_tracking.dart';
 import 'trail_answers.dart';
 import 'trail_catalogue.dart';
 import 'trail_catalogue_page.dart';
+import 'trail_discovery.dart';
 import 'trail_fit_badge.dart';
 import 'trail_geometry.dart';
 import 'trail_guide.dart';
@@ -44,6 +45,9 @@ class TrailOffApp extends StatelessWidget {
     this.trailPlanStore,
     this.tripPhotoStore,
     this.tripPhotoPicker,
+    this.trailDiscoverySource,
+    this.discoveredTrailStore,
+    this.trailSearchLocation,
   });
 
   final HikeLocationSource? locationSource;
@@ -55,6 +59,9 @@ class TrailOffApp extends StatelessWidget {
   final TrailPlanStore? trailPlanStore;
   final TripPhotoStore? tripPhotoStore;
   final TripPhotoPicker? tripPhotoPicker;
+  final TrailDiscoverySource? trailDiscoverySource;
+  final DiscoveredTrailStore? discoveredTrailStore;
+  final TrailSearchLocation? trailSearchLocation;
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +84,9 @@ class TrailOffApp extends StatelessWidget {
         trailPlanStore: trailPlanStore,
         tripPhotoStore: tripPhotoStore,
         tripPhotoPicker: tripPhotoPicker,
+        trailDiscoverySource: trailDiscoverySource,
+        discoveredTrailStore: discoveredTrailStore,
+        trailSearchLocation: trailSearchLocation,
       ),
     );
   }
@@ -94,6 +104,9 @@ class HikeDashboard extends StatefulWidget {
     this.trailPlanStore,
     this.tripPhotoStore,
     this.tripPhotoPicker,
+    this.trailDiscoverySource,
+    this.discoveredTrailStore,
+    this.trailSearchLocation,
   });
 
   final HikeLocationSource? locationSource;
@@ -105,6 +118,9 @@ class HikeDashboard extends StatefulWidget {
   final TrailPlanStore? trailPlanStore;
   final TripPhotoStore? tripPhotoStore;
   final TripPhotoPicker? tripPhotoPicker;
+  final TrailDiscoverySource? trailDiscoverySource;
+  final DiscoveredTrailStore? discoveredTrailStore;
+  final TrailSearchLocation? trailSearchLocation;
 
   @override
   State<HikeDashboard> createState() => _HikeDashboardState();
@@ -140,22 +156,34 @@ class _HikeDashboardState extends State<HikeDashboard> {
   double? _offRouteMeters;
   bool get _offlineMapSupported =>
       widget.offlineMapSupported ?? _isMobileTarget;
-  bool get _nativeMapSupported => widget.nativeMapSupported ?? _isMobileTarget;
+  bool get _nativeMapSupported => widget.nativeMapSupported ?? _maplibreTarget;
   bool get _isMobileTarget =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
+  /// The platforms where MapLibre draws the real map. Offline downloads stay
+  /// mobile-only, but the map itself also runs in the web build; the painted
+  /// fallback is only for platforms the plugin has no implementation for.
+  bool get _maplibreTarget => kIsWeb || _isMobileTarget;
+
   late final OfflineMapRepository _offlineMapRepository;
   late final TrailPlanStore _planStore;
   late final TripPhotoStore _photoStore;
   late final TripPhotoPicker _photoPicker;
+  late final DiscoveredTrailStore _discoveryStore;
 
   /// Photo totals per saved trip, keyed like the stored photos.
   Map<String, int> _photoCounts = const {};
 
-  Trail? get _plannedTrail =>
-      plannedTrail(sampleTrailCatalogue, _plannedTrailId);
+  /// Trails found near the hiker, kept so a plan made from one still resolves
+  /// after a restart.
+  List<Trail> _discoveredTrails = const [];
+
+  Trail? get _plannedTrail => plannedTrail([
+    ...sampleTrailCatalogue,
+    ..._discoveredTrails,
+  ], _plannedTrailId);
 
   OfflineArea get _offlineArea {
     final trail = _plannedTrail;
@@ -172,9 +200,26 @@ class _HikeDashboardState extends State<HikeDashboard> {
     _planStore = widget.trailPlanStore ?? SharedPreferencesTrailPlanStore();
     _photoStore = widget.tripPhotoStore ?? FileTripPhotoStore();
     _photoPicker = widget.tripPhotoPicker ?? ImagePickerTripPhotoPicker();
+    _discoveryStore =
+        widget.discoveredTrailStore ?? SharedPreferencesDiscoveredTrailStore();
     _loadHistory();
     _loadPlan();
     _loadPhotoCounts();
+    _loadDiscoveredTrails();
+  }
+
+  Future<void> _loadDiscoveredTrails() async {
+    List<Trail> trails;
+    try {
+      trails = await _discoveryStore.load();
+    } catch (_) {
+      trails = const [];
+    }
+    if (!mounted) return;
+    setState(() => _discoveredTrails = trails);
+    // A plan made from a found trail could not be resolved until the stored
+    // trails arrived, so its saved map state is re-checked now.
+    if (_planLoaded && _plannedTrailId != null) await _loadOfflineRegion();
   }
 
   Future<void> _loadPhotoCounts() async {
@@ -278,10 +323,17 @@ class _HikeDashboardState extends State<HikeDashboard> {
         builder: (_) => TrailCataloguePage(
           ability: _hikingAbility,
           conditions: _trailConditions,
-          planStore: widget.trailPlanStore,
+          planStore: _planStore,
+          discoverySource: widget.trailDiscoverySource,
+          discoveredTrailStore: _discoveryStore,
+          searchLocation: widget.trailSearchLocation,
         ),
       ),
     );
+    if (!mounted) return;
+    // A route found near the hiker may be the one they planned, so the saved
+    // trails are re-read before the plan is resolved.
+    await _loadDiscoveredTrails();
     if (!mounted) return;
     _loadPlan();
   }
@@ -817,7 +869,10 @@ class _TrailMap extends StatelessWidget {
                   ),
                 ),
               ),
-            if (tour) ...[
+            // The place names and pins are painted-map decorations at fixed
+            // pixels, so they only belong on the fallback drawing; over the
+            // real map they would point at nothing.
+            if (tour && !showNativeMap) ...[
               const Positioned(
                 left: 20,
                 top: 92,
@@ -872,49 +927,36 @@ class _TrailMap extends StatelessWidget {
                 ),
               ),
             ],
-            Positioned(
-              left: MediaQuery.sizeOf(context).width * 0.43,
-              top: 177,
-              child: Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0878F9),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 4),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0x33808A83), blurRadius: 7),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              right: 14,
-              bottom: 14,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.navigation_rounded, color: _forest, size: 14),
-                    SizedBox(width: 5),
-                    Text(
-                      'North',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
+            // The map draws its own compass, and the live position comes from
+            // the GPS fixes rather than a dot pinned to the card.
+            if (!showNativeMap)
+              Positioned(
+                right: 14,
+                bottom: 14,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.navigation_rounded, color: _forest, size: 14),
+                      SizedBox(width: 5),
+                      Text(
+                        'North',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -1270,8 +1312,21 @@ class _NativeTrailMap extends StatefulWidget {
 
 class _NativeTrailMapState extends State<_NativeTrailMap> {
   maplibre.MapLibreMapController? _controller;
-  maplibre.Line? _trailLine;
+  maplibre.Line? _routeLine;
+  maplibre.Line? _trackLine;
+  maplibre.Circle? _positionCircle;
   bool _styleLoaded = false;
+
+  /// What is already on the map, so a rebuild that changed nothing on the
+  /// ground does not tear the annotations down and add them back.
+  List<TrailPoint>? _drawnRoute;
+  bool? _drawnDemoRoute;
+  int _drawnPointCount = 0;
+  DateTime? _drawnPointTime;
+
+  /// Annotation changes are awaited one at a time; two overlapping updates
+  /// would remove a line that the other one is still adding.
+  Future<void> _annotations = Future<void>.value();
 
   @override
   Widget build(BuildContext context) => maplibre.MapLibreMap(
@@ -1284,34 +1339,51 @@ class _NativeTrailMapState extends State<_NativeTrailMap> {
     myLocationEnabled: false,
     logoEnabled: false,
     attributionButtonPosition: maplibre.AttributionButtonPosition.bottomRight,
-    onMapCreated: (controller) => _controller = controller,
+    onMapCreated: (controller) {
+      _controller = controller;
+      // Whichever of the two callbacks arrives second does the drawing.
+      _scheduleAnnotations();
+    },
     onStyleLoadedCallback: _drawKnownTrail,
   );
 
   void _drawKnownTrail() {
-    final controller = _controller;
-    if (!_styleLoaded && controller != null) {
-      _styleLoaded = true;
-      _updateTrailLine();
-    }
+    if (_styleLoaded) return;
+    _styleLoaded = true;
+    _scheduleAnnotations();
   }
 
   @override
   void didUpdateWidget(covariant _NativeTrailMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.centerLatitude != widget.centerLatitude ||
-        oldWidget.centerLongitude != widget.centerLongitude) {
+    final centerMoved =
+        oldWidget.centerLatitude != widget.centerLatitude ||
+        oldWidget.centerLongitude != widget.centerLongitude;
+    final routeChanged = !identical(oldWidget.route, widget.route);
+    final trackStarted =
+        oldWidget.points.isEmpty && widget.points.isNotEmpty;
+    if (centerMoved || routeChanged) {
       _recenter();
     }
-    if (oldWidget.route != widget.route) {
-      _recenter();
+    // With no plan the map has no route to frame, so the first fix becomes the
+    // frame instead of leaving the view over the demo area.
+    if (trackStarted && widget.route.length < 2) {
+      _recenterOnLatestPoint();
     }
     if (_styleLoaded &&
-        (oldWidget.points != widget.points ||
-            oldWidget.route != widget.route ||
-            oldWidget.showDemoRoute != widget.showDemoRoute)) {
-      _updateTrailLine();
+        (routeChanged ||
+            oldWidget.showDemoRoute != widget.showDemoRoute ||
+            _trackChanged(oldWidget.points, widget.points))) {
+      _scheduleAnnotations();
     }
+  }
+
+  /// Points are appended and the parent rebuilds on every tick, so the length
+  /// and the newest timestamp say whether the track really moved.
+  bool _trackChanged(List<HikePoint> previous, List<HikePoint> current) {
+    if (previous.length != current.length) return true;
+    if (current.isEmpty) return false;
+    return previous.last.timestamp != current.last.timestamp;
   }
 
   /// Each degree of a route needs roughly `320 / span` pixels, which is a zoom
@@ -1336,42 +1408,122 @@ class _NativeTrailMapState extends State<_NativeTrailMap> {
     );
   }
 
-  Future<void> _updateTrailLine() async {
+  Future<void> _recenterOnLatestPoint() async {
     final controller = _controller;
-    if (controller == null || !_styleLoaded) return;
-    final previousLine = _trailLine;
-    if (previousLine != null) await controller.removeLine(previousLine);
-    _trailLine = null;
-    final route = widget.route;
-    final List<maplibre.LatLng> geometry;
-    if (widget.points.isNotEmpty) {
-      geometry = widget.points
-          .map((point) => maplibre.LatLng(point.latitude, point.longitude))
-          .toList();
-    } else if (route.length > 1) {
-      geometry = route
-          .map((point) => maplibre.LatLng(point.latitude, point.longitude))
-          .toList();
-    } else if (widget.showDemoRoute) {
-      geometry = const [
-        maplibre.LatLng(42.686, 0.486),
-        maplibre.LatLng(42.691, 0.497),
-        maplibre.LatLng(42.688, 0.506),
-        maplibre.LatLng(42.699, 0.512),
-        maplibre.LatLng(42.703, 0.526),
-      ];
-    } else {
-      return;
-    }
-    _trailLine = await controller.addLine(
-      maplibre.LineOptions(
-        geometry: geometry,
-        lineColor: widget.points.isEmpty ? '#C66D39' : '#0878F9',
-        lineWidth: 4,
-        lineOpacity: 0.95,
-        lineJoin: 'round',
+    if (controller == null || widget.points.isEmpty) return;
+    final point = widget.points.last;
+    await controller.animateCamera(
+      maplibre.CameraUpdate.newLatLngZoom(
+        maplibre.LatLng(point.latitude, point.longitude),
+        15,
       ),
     );
+  }
+
+  void _scheduleAnnotations() {
+    _annotations = _annotations.then((_) => _updateAnnotations()).catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
+      // A failed draw must not break the queue, or one bad frame would stop
+      // every later route and track update from reaching the map.
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'trailoff',
+          context: ErrorDescription('while drawing the trail map'),
+        ),
+      );
+    });
+  }
+
+  /// Draws the planned line and the live track as separate layers, and marks
+  /// the latest fix. The track used to replace the route, so planning a trail
+  /// and then recording lost the line it was meant to follow.
+  Future<void> _updateAnnotations() async {
+    final controller = _controller;
+    if (controller == null || !_styleLoaded || !mounted) return;
+
+    final points = widget.points;
+    final demoRoute = widget.showDemoRoute && points.isEmpty;
+    if (!identical(_drawnRoute, widget.route) || _drawnDemoRoute != demoRoute) {
+      final previous = _routeLine;
+      if (previous != null) await controller.removeLine(previous);
+      _routeLine = null;
+      final geometry = _routeGeometry(demoRoute);
+      if (geometry.length > 1) {
+        _routeLine = await controller.addLine(
+          maplibre.LineOptions(
+            geometry: geometry,
+            lineColor: '#C66D39',
+            lineWidth: 4,
+            lineOpacity: 0.95,
+            lineJoin: 'round',
+          ),
+        );
+      }
+      _drawnRoute = widget.route;
+      _drawnDemoRoute = demoRoute;
+    }
+
+    final latest = points.isEmpty ? null : points.last;
+    if (points.length == _drawnPointCount &&
+        latest?.timestamp == _drawnPointTime) {
+      return;
+    }
+    final previousTrack = _trackLine;
+    if (previousTrack != null) await controller.removeLine(previousTrack);
+    _trackLine = null;
+    // A single fix is not a line: MapLibre rejects a one-position LineString.
+    if (points.length > 1) {
+      _trackLine = await controller.addLine(
+        maplibre.LineOptions(
+          geometry: [
+            for (final point in points)
+              maplibre.LatLng(point.latitude, point.longitude),
+          ],
+          lineColor: '#0878F9',
+          lineWidth: 4,
+          lineOpacity: 0.95,
+          lineJoin: 'round',
+        ),
+      );
+    }
+    final previousCircle = _positionCircle;
+    if (previousCircle != null) await controller.removeCircle(previousCircle);
+    _positionCircle = null;
+    if (latest != null) {
+      _positionCircle = await controller.addCircle(
+        maplibre.CircleOptions(
+          geometry: maplibre.LatLng(latest.latitude, latest.longitude),
+          circleRadius: 6,
+          circleColor: '#0878F9',
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 2,
+        ),
+      );
+    }
+    _drawnPointCount = points.length;
+    _drawnPointTime = latest?.timestamp;
+  }
+
+  List<maplibre.LatLng> _routeGeometry(bool demoRoute) {
+    final route = widget.route;
+    if (route.length > 1) {
+      return [
+        for (final point in route)
+          maplibre.LatLng(point.latitude, point.longitude),
+      ];
+    }
+    if (!demoRoute) return const [];
+    return const [
+      maplibre.LatLng(42.686, 0.486),
+      maplibre.LatLng(42.691, 0.497),
+      maplibre.LatLng(42.688, 0.506),
+      maplibre.LatLng(42.699, 0.512),
+      maplibre.LatLng(42.703, 0.526),
+    ];
   }
 }
 
@@ -1581,8 +1733,11 @@ class _PlannedTrail extends StatelessWidget {
             ),
             const SizedBox(height: 7),
             Text(
-              '${planned.distanceLabel} · ${planned.ascentLabel} ascent · '
-              '${planned.durationLabel}',
+              planned.elevationKnown
+                  ? '${planned.distanceLabel} · ${planned.ascentLabel} ascent · '
+                        '${planned.durationLabel}'
+                  : '${planned.distanceLabel} · ascent unknown · '
+                        '${planned.durationLabel}',
               style: const TextStyle(
                 color: Color(0xFF5F6862),
                 fontSize: 12,

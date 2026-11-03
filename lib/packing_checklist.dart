@@ -65,12 +65,14 @@ List<PackingItem> packingChecklistFor({
             'for ${trail.durationLabel} on the trail',
       ),
     if (trail != null &&
-        (trail.durationMinutes >= 180 || trail.ascentMeters >= 500))
+        (trail.durationMinutes >= 180 ||
+            (trail.elevationKnown && trail.ascentMeters >= 500)))
       PackingItem(
         id: 'extra-food',
         label: 'Extra food',
-        reason:
-            '${trail.distanceLabel} and ${trail.ascentLabel} needs more than a snack',
+        reason: trail.elevationKnown
+            ? '${trail.distanceLabel} and ${trail.ascentLabel} needs more than a snack'
+            : '${trail.distanceLabel} is a long day out',
       ),
     const PackingItem(
       id: 'navigation',
@@ -87,13 +89,13 @@ List<PackingItem> packingChecklistFor({
       label: 'Headlamp',
       reason: 'Keep a light available if your hike takes longer than planned',
     ),
-    if (trail != null && trail.ascentMeters >= 500)
+    if (trail != null && trail.elevationKnown && trail.ascentMeters >= 500)
       const PackingItem(
         id: 'poles',
         label: 'Trekking poles',
         reason: 'Long descents are easier on the knees with poles',
       ),
-    if (trail != null && trail.highestPointMeters >= 1800)
+    if (trail != null && trail.elevationKnown && trail.highestPointMeters >= 1800)
       PackingItem(
         id: 'insulation',
         label: 'Insulating layer',
@@ -237,7 +239,8 @@ class _PackingChecklistState extends State<PackingChecklist> {
           Text(
             trail == null
                 ? 'Suggested essentials · check off what you have packed'
-                : 'Tailored to ${trail.name} · ${trail.distanceLabel} · ${trail.ascentLabel}',
+                : 'Tailored to ${trail.name} · ${trail.distanceLabel}'
+                      '${trail.elevationKnown ? ' · ${trail.ascentLabel}' : ''}',
             style: const TextStyle(color: Color(0xFF777E79), fontSize: 11),
           ),
           const SizedBox(height: 8),
