@@ -2,6 +2,19 @@
 
 TrailOff helps people explore outdoors: discover trails, download offline maps, record GPS routes, and save adventures. The current app includes a trail catalogue with route geometry, plan-aware recording with off-route warnings, on-device hike history with photo albums per trip, GPX sharing, offline map regions, saved-route recommendations, a plan-aware packing checklist, offline trail answers, and a Constellation sky view.
 
+## Android build setup
+
+Use JDK 21 to build Android: `maplibre_gl` compiles its Android code with Java 21. A JDK 17 compiler fails with `invalid source release: 21`, even though the app itself targets Java 17.
+
+On Apple Silicon macOS with Homebrew JDK 21 installed:
+
+```sh
+flutter config --jdk-dir=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+flutter run --release
+```
+
+On other setups, pass your JDK 21 installation directory. This Flutter setting applies to all local Flutter projects; restart open editors after changing it. `flutter doctor -v` reports the selected JDK. See the [Flutter Java configuration guide](https://docs.flutter.dev/release/breaking-changes/android-java-gradle-migration-guide).
+
 ## Product scope
 
 - Discover trails and match them to the hiker. *(Implemented: bundled sample routes, plus a live OpenStreetMap search around the hiker's location or a searched place, with ability and condition fit.)*
